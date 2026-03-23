@@ -432,7 +432,7 @@ code,pre,.mono{font-family:'JetBrains Mono',monospace}
 
   <!-- Highlight banner -->
   <div style="background:linear-gradient(135deg,rgba(123,47,190,.14),rgba(255,102,0,.06));border:1px solid rgba(123,47,190,.22);border-radius:var(--r-lg);padding:14px 20px;margin-bottom:24px;display:flex;align-items:center;gap:14px">
-    <div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--v500),var(--a500));display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 14px rgba(123,47,190,.38)"><i class="fas fa-wand-magic-sparkles" style="color:white;font-size:13px"></i></div>
+    <div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--v500),var(--a500));display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 14px rgba(123,47,190,.38)"><i class="fas fa-check" style="color:white;font-size:13px"></i></div>
     <div><div style="font-size:13px;font-weight:700;color:var(--t1);margin-bottom:2px">From 7-step manual paper workflow to zero-touch automation</div><div style="font-size:12px;color:var(--t3)">Replaces printing, manual AWB typing, barcode generation, physical arrangement, and paper scanning. Adds a duplication check that never existed before.</div></div>
   </div>
 
@@ -440,7 +440,7 @@ code,pre,.mono{font-family:'JetBrains Mono',monospace}
   <div class="kpi-grid">
     <div class="kpi-card kpi-v">
       <div class="kpi-label">Automation Rate</div>
-      <div class="kpi-val" data-count="95" data-suffix="%">0%</div>
+      <div class="kpi-val" data-prefix="+" data-count="90" data-suffix="%">+90%</div>
       <div class="kpi-note">docs matched without human input</div>
       <div class="prog"><div class="prog-fill" style="background:var(--v500);width:0" data-w="95"></div></div>
     </div>
@@ -452,13 +452,13 @@ code,pre,.mono{font-family:'JetBrains Mono',monospace}
     </div>
     <div class="kpi-card kpi-e">
       <div class="kpi-label">DB Coverage</div>
-      <div class="kpi-val" data-count="70" data-suffix="k+">0</div>
+      <div class="kpi-val" data-count="300" data-suffix="k+">300k+</div>
       <div class="kpi-note">live AWB references validated</div>
       <div class="prog"><div class="prog-fill" style="background:var(--e500);width:0" data-w="100"></div></div>
     </div>
     <div class="kpi-card kpi-b">
       <div class="kpi-label">False Positives</div>
-      <div class="kpi-val" data-count="0" data-suffix="">0</div>
+      <div class="kpi-val" data-count="0" data-suffix="">~0</div>
       <div class="kpi-note">all AWBs verified against DB</div>
       <div class="prog"><div class="prog-fill" style="background:var(--b500);width:0" data-w="100"></div></div>
     </div>
@@ -612,6 +612,66 @@ code,pre,.mono{font-family:'JetBrains Mono',monospace}
   </div>
 
   <div class="info-box info-a"><i class="fas fa-triangle-exclamation info-icon" style="color:var(--a400)"></i><div style="font-size:13px;color:var(--t2);line-height:1.8"><strong>What about difficult documents?</strong> Sideways scans, image-only PDFs, and ambiguous documents are handled via multi-stage fallback. If all stages fail, the file moves to <span class="badge ba">NEEDS_REVIEW</span> for manual handling. Difficult files also respect a <code>LONG_PASS_TIMEOUT_SECONDS=45.0</code> budget during long-pass — they are deferred to a third pass that runs once easier documents clear the queue, with their full OCR state preserved for seamless resumption.</div></div>
+
+  <div class="div"></div>
+  <h3 style="font-family:'Outfit',sans-serif;font-size:16px;font-weight:800;margin-bottom:8px">Business Impact for FedEx Operations</h3>
+  <p style="font-size:13px;color:var(--t3);line-height:1.75;margin-bottom:14px">This automation is valuable because it solves real operational delays, not just document processing. It reduces shipment risk, protects service timelines, cuts manual workload, and gives teams real visibility into flow and backlog.</p>
+
+  <div class="g2" style="margin-bottom:14px">
+    <div class="card" style="border-color:rgba(16,185,129,.25)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <i class="fas fa-triangle-exclamation" style="color:var(--e400)"></i>
+        <span style="font-weight:700;font-size:14px;font-family:'Outfit',sans-serif;color:var(--e400)">Operational Problems Solved</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;font-size:12.5px;color:var(--t3);line-height:1.7">
+        <div><span class="badge ba" style="margin-right:6px">01</span>Late scanning risk: a perishable-shipment invoice scanned 3 hours late can push movement by 1-2 days.</div>
+        <div><span class="badge ba" style="margin-right:6px">02</span>After-hours pileups: documents received post-shift sit unprocessed and miss next-day clearance windows.</div>
+        <div><span class="badge ba" style="margin-right:6px">03</span>Duplicate exposure: same shipment documents can re-enter flow without reliable duplicate screening.</div>
+        <div><span class="badge ba" style="margin-right:6px">04</span>Paper-heavy handling: printing, arranging, rescanning, and manual indexing consume time and resources.</div>
+        <div><span class="badge ba" style="margin-right:6px">05</span>No real-time queue visibility: teams cannot easily see what is waiting, what is blocked, or what completed.</div>
+        <div><span class="badge ba" style="margin-right:6px">06</span>Exception handling overload: hard scans consume senior operator time that should be reserved for true edge cases.</div>
+        <div><span class="badge ba" style="margin-right:6px">07</span>Shift-change discontinuity: work quality and speed vary by shift handoff and manual prioritization.</div>
+        <div><span class="badge ba" style="margin-right:6px">08</span>Audit reconstruction cost: proving what happened to a file requires manual log chasing across tools.</div>
+      </div>
+    </div>
+    <div class="card" style="border-color:rgba(123,47,190,.25)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <i class="fas fa-chart-line" style="color:var(--v400)"></i>
+        <span style="font-weight:700;font-size:14px;font-family:'Outfit',sans-serif;color:var(--v400)">How Automation Changes Outcomes</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;font-size:12.5px;color:var(--t3);line-height:1.7">
+        <div><span class="badge bv" style="margin-right:6px">Service Speed</span>Night and backlog documents can be processed continuously, reducing clearance and dispatch delays.</div>
+        <div><span class="badge bv" style="margin-right:6px">Accuracy</span>Duplicate checks reduce repeat handling, rework, and downstream delivery confusion.</div>
+        <div><span class="badge bv" style="margin-right:6px">Paperless Shift</span>Printing/scanning dependency drops sharply, enabling near paperless operation for this lane.</div>
+        <div><span class="badge bv" style="margin-right:6px">Visibility</span>Document counts, queue state, and status become visible in real time, enabling auditable operations.</div>
+        <div><span class="badge bv" style="margin-right:6px">Labor Efficiency</span>Countless manual scan-touch hours are replaced by no-touch routing for routine files.</div>
+        <div><span class="badge bv" style="margin-right:6px">Continuity</span>Standardized automation behavior reduces dependence on shift-specific tribal workflows.</div>
+        <div><span class="badge bv" style="margin-right:6px">Predictability</span>Deferred/timeout recovery keeps difficult files from freezing intake lanes.</div>
+        <div><span class="badge bv" style="margin-right:6px">Leadership Control</span>Live operational telemetry supports faster escalation and staffing decisions.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="overflow-x:auto;margin-bottom:14px">
+    <table class="tbl" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden">
+      <thead><tr><th>Operational Dimension</th><th>Without Automation</th><th>With Automation</th><th>Business Effect</th></tr></thead>
+      <tbody>
+        <tr><td style="font-weight:600;color:var(--t2)">Perishable Shipment Timeliness</td><td style="color:var(--r400)">Invoice scan delay can hold shipment 1-2 extra days</td><td style="color:var(--e400)">Continuous intake + automated extraction reduces waiting time before clearance</td><td>Higher on-time movement probability for sensitive cargo</td></tr>
+        <tr><td style="font-weight:600;color:var(--t2)">After-Hours Intake</td><td style="color:var(--r400)">Documents accumulate overnight and spill into next-day operations</td><td style="color:var(--e400)">Queue is monitored and processed with less dependency on immediate manual action</td><td>Lower morning backlog and fewer next-day misses</td></tr>
+        <tr><td style="font-weight:600;color:var(--t2)">Duplicate Handling</td><td style="color:var(--r400)">Manual memory/checklists; high inconsistency risk</td><td style="color:var(--e400)">Automated duplicate screening with conservative decision policy</td><td>Lower rework, fewer unnecessary touches, stronger control</td></tr>
+        <tr><td style="font-weight:600;color:var(--t2)">Labor &amp; Paper</td><td style="color:var(--r400)">Heavy print/scan/manual sort effort</td><td style="color:var(--e400)">Near paperless flow and no-touch processing for routine files</td><td>Significant hours saved and reduced paper cost/waste</td></tr>
+        <tr><td style="font-weight:600;color:var(--t2)">Operational Visibility</td><td style="color:var(--r400)">Little live visibility into document volume and state</td><td style="color:var(--e400)">Live counts, status, queue depth, and event logs available</td><td>True auditability and better staffing/decision planning</td></tr>
+        <tr><td style="font-weight:600;color:var(--t2)">Exception Throughput</td><td style="color:var(--r400)">Hard files can block operators and delay normal workload</td><td style="color:var(--e400)">Timeout-defer + resume path isolates hard files from routine flow</td><td>Better SLA protection for standard-volume processing</td></tr>
+        <tr><td style="font-weight:600;color:var(--t2)">Shift-to-Shift Consistency</td><td style="color:var(--r400)">Output quality depends heavily on who is on shift</td><td style="color:var(--e400)">Unified automated rules enforce same decision logic across all shifts</td><td>More consistent operational outcomes and fewer handoff surprises</td></tr>
+        <tr><td style="font-weight:600;color:var(--t2)">Audit Readiness</td><td style="color:var(--r400)">Manual evidence collection is slow and fragmented</td><td style="color:var(--e400)">Structured logs and tracker records available per processing event</td><td>Faster internal/external review with higher confidence</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="info-box info-v" style="margin-bottom:4px">
+    <i class="fas fa-bullseye info-icon" style="color:var(--v400)"></i>
+    <div style="font-size:13px;color:var(--t2);line-height:1.8"><strong>Strategic outcome:</strong> this shifts teams from endless scan/print/manual handling to exception-based operations. Routine documents move with minimal touch, critical shipments face less delay risk, and leadership gains measurable control through real-time visibility and audit evidence.</div>
+  </div>
 </div>
 <!-- ═══════════════════════════════════════
      SECTION 2 — PIPELINE FLOW (SVG flowchart)
@@ -807,7 +867,7 @@ code,pre,.mono{font-family:'JetBrains Mono',monospace}
         <rect x="40" y="676" width="380" height="40" rx="10" fill="rgba(255,102,0,.09)" stroke="rgba(255,102,0,.3)" stroke-width="1.5" stroke-dasharray="5,3"/>
         <text x="66" y="700" fill="#FF7A1A" font-size="11">&#xf074;</text>
         <text x="95" y="692" fill="#FF9944" font-size="11" font-weight="700" font-family="Outfit,sans-serif">FAST-LANE DECISION</text>
-        <text x="95" y="707" fill="#94A3B8" font-size="10">allow_long_pass=False → DEFERRED after Stage 3 fail · clears inbox fast</text>
+        <text x="95" y="707" fill="#94A3B8" font-size="10">allow_long_pass=False → ProbeLite strict check → DEFERRED only if still no match</text>
         <rect x="368" y="683" width="54" height="16" rx="8" fill="rgba(255,102,0,.13)" stroke="rgba(255,102,0,.25)"/>
         <text x="395" y="695" text-anchor="middle" fill="#FF7A1A" font-size="8" font-weight="700">SCHEDULE</text>
       </g>
@@ -2077,13 +2137,14 @@ function acc(head){
 function animateCounters(){
   document.querySelectorAll('[data-count]').forEach(el=>{
     const target=parseInt(el.dataset.count);
+    const prefix=el.dataset.prefix||'';
     const suffix=el.dataset.suffix||'';
     let start=0; const dur=1400;
     const step=ts=>{
       if(!start) start=ts;
       const prog=Math.min((ts-start)/dur,1);
       const ease=1-Math.pow(1-prog,3);
-      el.textContent=Math.round(ease*target)+suffix;
+      el.textContent=prefix+Math.round(ease*target)+suffix;
       if(prog<1) requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
@@ -2133,7 +2194,7 @@ const FD=[
    desc:'Stage 3.2: Reuses OCR text already generated during the rotation probe at zero additional cost — no re-render. Runs 400-pattern and exact-high checks on probe text for early exit. Stage 3: Identical sub-pass structure to Stage 2 at 420 DPI at base_angle. Higher DPI yields better clarity for thin-text, fine-print, and compressed scans. All images cached.',
    tags:['3.2: 0 cost (cached)','Stage 3 DPI: 420','Fully cached renders','Fast-lane ProbeLite runs after S3 fail']},
   {badge:'STAGE 4/5/5.5',title:'Rescue Passes',icon:'fa-crop',bg:'rgba(236,72,153,.12)',ic:'#F472B6',
-   desc:'Stage 4: Full OCR sub-pass sequence at remaining untested angles. Timeout check at each angle boundary. Stage 5: ACI-prefixed patterns, 400-labeled format, FedEx carrier row positional matching, 2-3× upscaled region crops. Budget: 60 seconds. Stage 5.5: Three overlapping right-side crops (RightMid, UpperRight, RightWide) upscaled 3×. Two-step efficiency: digit-only pass first; skips general-text OCR if <10 digit chars found.',
+   desc:'Stage 4: Full OCR sub-pass sequence at remaining untested angles. Timeout check at each angle boundary. Stage 5: ACI-prefixed patterns, 400-labeled format, FedEx carrier row positional matching, 2-3× upscaled region crops. Stage 5.5: Three overlapping right-side crops (RightMid, UpperRight, RightWide) upscaled 3× with MAX_CONTEXT_RESCUE_MS budget guard (default 60s). Two-step efficiency: digit-only pass first; skips general-text OCR if <10 digit chars found.',
    tags:['S4: rotation fallback','S5: budget 60s','S5.5: 3× upscale crops','Two-step OCR efficiency']},
   {badge:'STAGE 7',title:'NEEDS_REVIEW — Terminal State',icon:'fa-triangle-exclamation',bg:'rgba(239,68,68,.12)',ic:'#F87171',
    desc:'Terminal state when no AWB match found after exhausting all stages. Actions: full diagnostic log with every candidate tried, confidence tier per candidate, which stages saw each candidate, and all quarantined candidates listed. File moved via safe_move() to NEEDS_REVIEW_DIR. Audit tracker updated via record_hotfolder_needs_review() with reason string and sorted candidate list.',

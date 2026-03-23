@@ -150,10 +150,10 @@ set LAUNCHER=%USERPROFILE%\Desktop\AWB Pipeline.bat
 
 (
     echo @echo off
-    echo title AWB Pipeline
+    echo title GJ21 AWB Pipeline
     echo cd /d "%CD%"
     echo call .venv\Scripts\activate.bat
-    echo python -m V3.app
+    echo python -m V3.launcher
 ) > "%LAUNCHER%"
 
 echo   [OK] Desktop launcher: %LAUNCHER%

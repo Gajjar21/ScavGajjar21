@@ -65,6 +65,7 @@ from V3.ui.theme import (
 _ROOT        = Path(__file__).resolve().parent.parent.parent   # AWB_PIPELINE/
 STATE_FILE   = config.BASE_DIR / "_run_state.json"
 SESSION_FILE = config.DATA_DIR / "session.json"
+LOGO_FILE    = _ROOT / "V3" / "ui" / "assets" / "gj21_logo.png"
 
 PROTECTED = {p.resolve() for p in config.PROTECTED_FILES}
 
@@ -336,6 +337,9 @@ class App(tk.Tk):
         self.geometry("1440x900")
         self.minsize(1100, 700)
         self.configure(bg=APP_BG)
+        self._header_logo_img = None
+        self._window_icon_img = None
+        self._load_branding_assets()
         config.ensure_dirs()
         self._tk_patchlevel = self._read_tk_patchlevel()
         self._legacy_tk_on_mac = (sys.platform == "darwin" and self._tk_patchlevel < (8, 6))
@@ -427,6 +431,19 @@ class App(tk.Tk):
     # ─────────────────────────────────────────────────────────────────────────
     # UI CONSTRUCTION
     # ─────────────────────────────────────────────────────────────────────────
+    def _load_branding_assets(self):
+        """Load GJ21 brand logo for header and window icon."""
+        try:
+            if not LOGO_FILE.exists():
+                return
+            src = Image.open(LOGO_FILE).convert("RGBA")
+            self._header_logo_img = ImageTk.PhotoImage(src.resize((42, 42), Image.Resampling.LANCZOS))
+            self._window_icon_img = ImageTk.PhotoImage(src.resize((96, 96), Image.Resampling.LANCZOS))
+            self.iconphoto(True, self._window_icon_img)
+        except Exception:
+            self._header_logo_img = None
+            self._window_icon_img = None
+
     def _read_tk_patchlevel(self):
         """Return Tk patchlevel as tuple, e.g. (8, 6, 14)."""
         try:
@@ -571,6 +588,19 @@ class App(tk.Tk):
         tk.Frame(hdr, bg=FEDEX_ORANGE, width=6).pack(side="left", fill="y")
         tk.Frame(hdr, bg=HEADER_BG,    width=10).pack(side="left", fill="y")
 
+        logo_col = tk.Frame(hdr, bg=HEADER_BG)
+        logo_col.pack(side="left", fill="y", pady=10, padx=(2, 10))
+        if self._header_logo_img is not None:
+            tk.Label(logo_col, image=self._header_logo_img, bg=HEADER_BG).pack(anchor="w")
+        else:
+            tk.Label(
+                logo_col,
+                text="GJ21",
+                font=(FONT_HEADER[0], max(FONT_HEADER[1] - 3, 12), "bold"),
+                bg=HEADER_BG,
+                fg=HEADER_FG,
+            ).pack(anchor="w")
+
         # Title block
         title_col = tk.Frame(hdr, bg=HEADER_BG)
         title_col.pack(side="left", fill="y", pady=10)
@@ -584,7 +614,7 @@ class App(tk.Tk):
             side="left", anchor="center", padx=(0, 7))
         tk.Label(
             sub_row,
-            text="FedEx Operations Control Centre  ·  ⌨ Ctrl+W AWB  Ctrl+B Batch  Ctrl+F Search  Ctrl+U Upload",
+            text="Operations Control Centre  ·  ⌨ Ctrl+W AWB  Ctrl+B Batch  Ctrl+F Search  Ctrl+U Upload",
             font=(FONT_SMALL[0], FONT_SMALL[1]),
             bg=HEADER_BG, fg="#8f98a6",
         ).pack(side="left", anchor="center")

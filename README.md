@@ -10,6 +10,9 @@ Automated Air Waybill (AWB) extraction and document processing pipeline with a c
 
 # Windows
 Install_Windows.bat
+
+# Windows (direct launcher)
+Run_GJ21_Launcher_Windows.bat
 ```
 
 Or manually:
@@ -21,7 +24,7 @@ source .venv/bin/activate          # Mac/Linux
 
 pip install -r V3/requirements.txt
 python -m V3.config                # verify paths
-python -m V3.app                   # launch UI
+python -m V3.launcher              # branded launcher + UI
 ```
 
 ## End-to-End Flow
@@ -181,6 +184,11 @@ System dependency: **Tesseract OCR** (installed by setup scripts or package mana
 ## Legacy Compatibility
 
 `main.py` remains a compatibility shim forwarding to `V3.app`.
+
+Windows launch helpers:
+- `Install_Windows.bat` creates a Desktop shortcut launcher.
+- `launch_app.vbs` runs hidden and now starts `V3.launcher`.
+- `Run_GJ21_Launcher_Windows.bat` is a direct one-click local launcher.
 
 ## Documentation
 
