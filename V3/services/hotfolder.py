@@ -25,6 +25,7 @@ from queue import Queue, Empty
 
 from V3 import config
 from V3.stages.pipeline import process_pdf
+from V3.services.edm_checker import is_edm_enabled
 from V3.core.file_ops import (
     log,
     require_tesseract,
@@ -152,9 +153,12 @@ def main() -> None:
     _reset_edm_exists_cache()
     rebuild_dashboard_now()  # full dashboard rebuild once at startup
 
+    edm_on = is_edm_enabled()
     startup_token = _get_edm_token()
-    if not startup_token:
-        log("[WARNING] No EDM token found; EDM fallback stage will be skipped.")
+    if not edm_on:
+        log("[EDM] EDM fallback is OFF (UI/config toggle). API calls are bypassed.")
+    elif not startup_token:
+        log("[WARNING] EDM is ON but no EDM token found; fallback stage will be skipped.")
     else:
         log("[EDM] Token present at startup (expiry checked on first fallback call).")
 

@@ -459,6 +459,7 @@ def read_dashboard_stats() -> dict:
         "hot_total": 0, "hot_complete": 0, "hot_review": 0, "hot_failed": 0,
         "edm_clean": 0, "edm_rejected": 0, "edm_partial": 0,
         "batches_built": 0, "tiffs_converted": 0,
+        "batch_tier_strong": 0, "batch_tier_mix": 0, "batch_tier_weak": 0,
         "avg_secs": "N/A",
     }
     try:
@@ -510,6 +511,13 @@ def read_dashboard_stats() -> dict:
                 etype = str(row[2] or "").upper()
                 if etype == "BATCH_BUILT":
                     stats["batches_built"] += 1
+                    tier = str(row[7] or "").strip().upper()  # detection_tier_label
+                    if tier == "HIGH":
+                        stats["batch_tier_strong"] += 1
+                    elif tier in {"MEDIUM", "MIXED"}:
+                        stats["batch_tier_mix"] += 1
+                    else:
+                        stats["batch_tier_weak"] += 1
                 elif etype == "TIFF_CONVERTED":
                     stats["tiffs_converted"] += 1
 

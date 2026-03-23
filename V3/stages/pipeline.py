@@ -101,12 +101,12 @@ except Exception:
     def record_hotfolder_end(*_a: Any, **_k: Any) -> None: ...  # noqa: E704
     def record_hotfolder_needs_review(*_a: Any, **_k: Any) -> None: ...  # noqa: E704
 
-# ── EDM existence fallback (dead code — structure preserved, never calls API) ─
+# ── EDM existence fallback (optional runtime-gated call) ──────────────────────
 try:
     from V3.services.edm_checker import edm_awb_exists_fallback  # type: ignore[import-untyped]
 except Exception:
     def edm_awb_exists_fallback(_awb: str) -> Optional[bool]:  # noqa: D401
-        """Dead-code stub — always returns None so the pipeline skips EDM."""
+        """Safe fallback when EDM checker module is unavailable."""
         return None
 
 
@@ -993,9 +993,53 @@ def process_pdf(
         # =================================================================
         # FAST-LANE EXIT
         # =================================================================
-        # Defer immediately after Stage 3 fails — probe, ROI, and all rescue
-        # stages run only in long-pass so the fast lane drains the inbox ASAP.
+        # Probe-Lite before defer:
+        # run a cheap low-DPI rotation probe with limited angles and allow only
+        # strict hits (400 / Exact-High). If no hit, defer exactly as before.
         if not allow_long_pass:
+            try:
+                probe_img_fast = get_image(ROTATION_PROBE_DPI, 0)
+                if _rotation_hint in (90, 180, 270):
+                    _probe_angles_fast = (0, _rotation_hint)
+                elif _is_image_only:
+                    _probe_angles_fast = (0, 90, 270)
+                else:
+                    _probe_angles_fast = (0,)
+
+                base_fast, _scores_fast, texts_fast = rotation_probe_best(
+                    probe_img_fast, return_scores=True, preferred_angles=_probe_angles_fast
+                )
+                if base_fast not in ALLOWED_ROTATION_ANGLES:
+                    base_fast = 0
+
+                # Strict-only Probe-Lite checks on selected angle text.
+                _pd_fast, _pg_fast = texts_fast.get(base_fast, ("", ""))
+                _probe_awb_400_fast = (
+                    extract_awb_from_400_pattern(_pd_fast)
+                    or extract_awb_from_400_pattern(_pg_fast)
+                )
+                if _probe_awb_400_fast:
+                    complete_match(
+                        _probe_awb_400_fast,
+                        "ProbeLite-400",
+                        "Matched via fast-lane probe-lite 400",
+                    )
+                    return "MATCHED"
+
+                _probe_combined_fast = "\n".join(p for p in (_pg_fast, _pd_fast) if p)
+                if _probe_combined_fast:
+                    _ph_fast, _ps_fast = extract_tiered_candidates(_probe_combined_fast, awb_set)
+                    _ph_db_fast = sorted(_ph_fast & awb_set)
+                    if len(_ph_db_fast) == 1:
+                        complete_match(
+                            _ph_db_fast[0],
+                            "ProbeLite-Exact-High",
+                            "Matched via fast-lane probe-lite exact high",
+                        )
+                        return "MATCHED"
+            except Exception as e:
+                log(f"[FAST-PROBE-LITE] Warning: {e}")
+
             log(f"[FAST-LANE] Deferred after Stage 3 (no match at 0°): {name}")
             close_pdf()
             return "DEFERRED"
@@ -1622,9 +1666,7 @@ def process_pdf(
             timings["ocr_context_ms"] += round((time.perf_counter() - label_start) * 1000, 1)
 
         # =================================================================
-        # STAGE 6 — EDM PERSISTENCE FALLBACK (dead code — structure stays,
-        #            never calls API because edm_awb_exists_fallback is a
-        #            no-op stub that always returns None)
+        # STAGE 6 — EDM PERSISTENCE FALLBACK (runtime gated by EDM toggle)
         # =================================================================
         persistent = [
             c for c in sorted(all_tried)

@@ -23,4 +23,4 @@
 
 - Slow long-pass: lower `LONG_PASS_TIMEOUT_SECONDS`.
 - Empty UI fields on macOS: ensure Python uses Tk >= 8.6 runtime.
-- EDM warnings: expected when token is missing in V3 (fallback disabled path).
+- EDM warnings: expected when EDM is ON but token is missing/invalid.

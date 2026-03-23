@@ -101,6 +101,7 @@ TOKEN_FILE            = DATA_DIR / "token.txt"
 STAGE_CACHE_CSV       = DATA_DIR / "stage_cache.csv"
 PIPELINE_SUMMARY_CSV  = DATA_DIR / "pipeline_summary.csv"
 EDM_AWB_EXISTS_CACHE  = DATA_DIR / "edm_awb_exists_cache.json"
+EDM_TOGGLE_FILE       = DATA_DIR / "edm_toggle.json"
 AWB_RELOAD_TRIGGER    = DATA_DIR / "reload_awb.trigger"
 
 # ── Logs ─────────────────────────────────────────────────────────────────────
@@ -128,7 +129,7 @@ elif _IS_MAC:
 else:
     TESSERACT_PATH = _tess_raw
 
-# ── EDM API (dead-code path — never called in test/dev) ──────────────────────
+# ── EDM API ────────────────────────────────────────────────────────────────────
 EDM_TOKEN             = os.getenv("EDM_TOKEN", "").strip() or None
 EDM_OPERATING_COMPANY = os.getenv("EDM_OPERATING_COMPANY", "FXE").strip()
 EDM_BASE_URL          = os.getenv(
@@ -137,6 +138,7 @@ EDM_BASE_URL          = os.getenv(
 ).strip()
 EDM_METADATA_URL = EDM_BASE_URL + "/edm/protocol/retrieve/groups/metadata"
 EDM_DOWNLOAD_URL = EDM_BASE_URL + "/edm/protocol/downloadDocuments"
+ENABLE_EDM_FALLBACK   = _bool("ENABLE_EDM_FALLBACK", False)
 
 # ── OCR / Matching ───────────────────────────────────────────────────────────
 AWB_LEN                     = 12
@@ -195,6 +197,12 @@ FILE_SETTLE_SECONDS          = _int("FILE_SETTLE_SECONDS", 3)
 EDM_OCR_COMPARE_LIMIT        = _int("EDM_OCR_COMPARE_LIMIT", 10)
 EDM_REJECT_IF_DUP_PAGES_OVER = _int("EDM_REJECT_IF_DUP_PAGES_OVER", 5)
 EDM_REJECT_IF_DUP_RATIO      = _float("EDM_REJECT_IF_DUP_RATIO", 0.70)
+EDM_TIER1_INCOMING_PAGES     = _int("EDM_TIER1_INCOMING_PAGES", 3)
+EDM_TIER1_EDM_PAGE_LIMIT     = _int("EDM_TIER1_EDM_PAGE_LIMIT", 5)
+EDM_TIER2_EDM_PAGE_LIMIT     = _int("EDM_TIER2_EDM_PAGE_LIMIT", 10)
+EDM_TEXT_LAYER_MIN_CHARS     = _int("EDM_TEXT_LAYER_MIN_CHARS", 30)
+EDM_OCR_WORKERS              = _int("EDM_OCR_WORKERS", 2)
+EDM_OCR_PARALLEL_MIN_TASKS   = _int("EDM_OCR_PARALLEL_MIN_TASKS", 4)
 
 # ── Batch builder ────────────────────────────────────────────────────────────
 MAX_PAGES_PER_BATCH  = _int("MAX_PAGES_PER_BATCH", 48)
@@ -279,6 +287,7 @@ if __name__ == "__main__":
 
     token_ok = bool(EDM_TOKEN and EDM_TOKEN != "paste_your_token_here")
     print(f"  {'EDM_TOKEN':<20} {'present' if token_ok else 'not set (EDM check skipped)'}")
+    print(f"  {'ENABLE_EDM_FALLBACK':<20} {ENABLE_EDM_FALLBACK}")
     print(f"\n  OCR_DPI_MAIN={OCR_DPI_MAIN}  OCR_DPI_STRONG={OCR_DPI_STRONG}")
     print(f"  TIFF_DPI={TIFF_DPI}  MAX_PAGES_PER_BATCH={MAX_PAGES_PER_BATCH}")
     print(f"  TWO_PASS={ENABLE_INBOX_TWO_PASS}  ROTATION={ENABLE_ROTATION_LAST_RESORT}")

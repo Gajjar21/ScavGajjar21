@@ -37,7 +37,7 @@ INBOX
   |      Third pass -> Resume timeout-deferred files with cached state
   v
 PROCESSED  (renamed to <AWB>.pdf)
-  |  V3 move step (EDM bypass)
+  |  V3 move step
   v
 CLEAN
   |  Batch Builder (cover pages + merge into print stacks)
@@ -68,7 +68,7 @@ Files that fail validation are moved to **REJECTED**.
 | 5 | Table Line Removal | Morphological line removal (cv2), then OCR |
 | 5.5 | Upscale Rescue | 3x upscale of best image, OCR |
 | 5.6 | Airway Label Rescue | Targeted crop regions (right-mid, upper-right), 3x upscale |
-| 6 | EDM Fallback | Persistence check (disabled in V3 — stub only) |
+| 6 | EDM Fallback | Optional AWB persistence check (runtime ON/OFF from UI) |
 | 7 | Needs Review | No match found after all stages |
 
 **Matching priority cascade:** Exact-High > Exact-Standard > Tolerance-High > Tolerance-Standard
@@ -175,7 +175,7 @@ Run `python -m V3.config` to verify all settings.
 - **Prepare Batch** — Build print stacks from CLEAN folder
 - **Retry NEEDS_REVIEW** — Move review files back to INBOX for reprocessing
 - **Upload Files** — Copy selected PDFs into INBOX
-- **EDM: DISABLED** — EDM duplicate checker (disabled in V3)
+- **EDM: ON/OFF** — Toggle EDM fallback API calls at runtime
 
 ### Maintenance Group
 - **Clear All** — Stop scripts, clear INBOX + OUT working files (protected files untouched)
@@ -206,7 +206,7 @@ Pillow>=10.0.0           # Image processing
 pytesseract>=0.3.10      # Tesseract OCR wrapper
 openpyxl>=3.1.0          # Excel read/write
 python-dotenv>=1.0.0     # .env loading
-requests>=2.31.0         # HTTP (EDM API, currently unused)
+requests>=2.31.0         # HTTP (EDM API)
 watchdog>=4.0.0          # Filesystem event monitoring
 reportlab>=4.0.0         # Barcode cover page generation
 opencv-python-headless>=4.8.0  # Table line removal, preprocessing
