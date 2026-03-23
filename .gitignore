@@ -1,0 +1,66 @@
+# AWB Pipeline .gitignore
+
+# Local environment config - NEVER commit
+.env
+env-2
+Extras/env file
+
+# Secrets
+/data/token.txt
+token.txt
+
+# Runtime folders: keep skeleton only
+/pdf_organizer/*
+!/pdf_organizer/.gitkeep
+!/pdf_organizer/INBOX/
+!/pdf_organizer/PROCESSED/
+!/pdf_organizer/CLEAN/
+!/pdf_organizer/REJECTED/
+!/pdf_organizer/NEEDS_REVIEW/
+!/pdf_organizer/PENDING_PRINT/
+/pdf_organizer/INBOX/*
+!/pdf_organizer/INBOX/.gitkeep
+/pdf_organizer/PROCESSED/*
+!/pdf_organizer/PROCESSED/.gitkeep
+/pdf_organizer/CLEAN/*
+!/pdf_organizer/CLEAN/.gitkeep
+/pdf_organizer/REJECTED/*
+!/pdf_organizer/REJECTED/.gitkeep
+/pdf_organizer/NEEDS_REVIEW/*
+!/pdf_organizer/NEEDS_REVIEW/.gitkeep
+/pdf_organizer/PENDING_PRINT/*
+!/pdf_organizer/PENDING_PRINT/.gitkeep
+
+/data/*
+!/data/.gitkeep
+!/data/OUT/
+/data/OUT/*
+!/data/OUT/.gitkeep
+
+/logs/*
+!/logs/.gitkeep
+
+Manual_Libraries/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+*.spec
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Stray copied runtime path folder names from cross-platform moves
+C:\\Users\\*
