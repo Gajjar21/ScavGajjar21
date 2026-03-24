@@ -41,6 +41,29 @@ except ImportError:
 # ── Tesseract path from config ───────────────────────────────────────────────
 pytesseract.pytesseract.tesseract_cmd = str(config.TESSERACT_PATH)
 
+# =============================================================================
+# Tesseract call counter  (instrumentation — zero overhead in production)
+# =============================================================================
+_tess_call_count: int = 0
+_tess_psm_counts: dict = {}   # {psm_key: int}  e.g. {"dig_psm6": 3, "txt_psm11": 1}
+
+
+def get_call_count() -> int:
+    """Return total Tesseract subprocess invocations since last reset_call_count()."""
+    return _tess_call_count
+
+
+def get_psm_counts() -> dict:
+    """Return per-mode call breakdown since last reset_call_count()."""
+    return dict(_tess_psm_counts)
+
+
+def reset_call_count() -> None:
+    """Reset the per-file Tesseract call counter and PSM breakdown to zero."""
+    global _tess_call_count, _tess_psm_counts
+    _tess_call_count = 0
+    _tess_psm_counts = {}
+
 
 # =============================================================================
 # PDF-to-Image rendering
@@ -93,6 +116,10 @@ def preprocess_for_text(img: Image.Image, invert: bool = False) -> Image.Image:
 
 def ocr_digits_only(img: Image.Image, psm: int = 6) -> str:
     """Run Tesseract in digits-only whitelist mode."""
+    global _tess_call_count, _tess_psm_counts
+    _tess_call_count += 1
+    _k = f"dig_psm{psm}"
+    _tess_psm_counts[_k] = _tess_psm_counts.get(_k, 0) + 1
     cfg = (
         f"--oem 3 --psm {psm} "
         "-c tessedit_char_whitelist=0123456789 "
@@ -103,6 +130,10 @@ def ocr_digits_only(img: Image.Image, psm: int = 6) -> str:
 
 def ocr_text_general(img: Image.Image, psm: int = 6) -> str:
     """Run Tesseract in general (unrestricted) text mode."""
+    global _tess_call_count, _tess_psm_counts
+    _tess_call_count += 1
+    _k = f"txt_psm{psm}"
+    _tess_psm_counts[_k] = _tess_psm_counts.get(_k, 0) + 1
     return pytesseract.image_to_string(img, config=f"--oem 3 --psm {psm}")
 
 
@@ -170,6 +201,8 @@ def extract_candidates_from_ocr_data(img: Image.Image) -> Set[str]:
     module level.
     """
     out: Set[str] = set()
+    global _tess_call_count
+    _tess_call_count += 1
     try:
         data = pytesseract.image_to_data(
             img, output_type=Output.DICT, config="--oem 3 --psm 6"

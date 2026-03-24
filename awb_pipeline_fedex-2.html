@@ -349,6 +349,7 @@ code,pre,.mono{font-family:'JetBrains Mono',monospace}
   padding:7px 14px;border-radius:var(--r-sm);font-size:12px;font-weight:600;
   cursor:pointer;border:none;background:transparent;color:var(--t4);
   font-family:'Inter',sans-serif;transition:all .15s;display:flex;align-items:center;gap:6px;
+  touch-action:manipulation;
 }
 .tab-btn:hover{background:rgba(255,255,255,.05);color:var(--t2)}
 .tab-btn.active{background:linear-gradient(135deg,var(--v500),var(--v700));color:#fff;
@@ -398,9 +399,11 @@ code,pre,.mono{font-family:'JetBrains Mono',monospace}
   gap:5px;
   opacity:0;
   transform:translateY(-4px);
-  pointer-events:none;
+  pointer-events:auto;
   transition:opacity .18s ease,transform .18s ease,border-color .18s ease,background .18s ease;
   backdrop-filter:blur(5px);
+  touch-action:manipulation;
+  -webkit-appearance:none;
 }
 .folder-hover-btn i{font-size:9px}
 .folder-tile:hover .folder-hover-btn,
@@ -413,6 +416,16 @@ code,pre,.mono{font-family:'JetBrains Mono',monospace}
     opacity:1;
     transform:none;
   }
+}
+
+/* ── TOUCH RELIABILITY (iPad/iOS Safari) ───────────────────── */
+button,
+[onclick],
+.acc-head,
+.p2node,
+.flow-node{
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:rgba(0,0,0,0);
 }
 </style>
 </head>

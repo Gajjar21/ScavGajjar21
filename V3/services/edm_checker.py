@@ -229,8 +229,8 @@ def _check_edm_api_for_awb(awb: str, token: str) -> Optional[bool]:
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
         "Accept": "application/json, text/plain, */*",
-        "Origin": "https://shipment-portal-g.prod.cloud.fedex.com",
-        "Referer": "https://shipment-portal-g.prod.cloud.fedex.com/",
+        "Origin": config.EDM_PORTAL_URL,
+        "Referer": config.EDM_PORTAL_URL + "/",
     }
     legacy_payload = {
         "documentClass": "SHIPMENT",

@@ -310,6 +310,11 @@ def process_pdf(
     ocr_cache: Dict[Tuple, str]         = {}
     preprocess_cache: Dict[Tuple, Any]  = {}
     table_clean_cache: list             = [None]
+    # Rotation probe memo: frozenset(angles) → (base_angle, scores_dict, probe_texts_dict)
+    # Prevents duplicate Tesseract invocations when multiple fast-lane helpers call
+    # rotation_probe_best() with overlapping angle sets on the same document.
+    # All five call sites use ROTATION_PROBE_DPI=140, so DPI is implicit in the key.
+    _rotation_probe_memo: dict          = {}
 
     # Default values for variables set inside early stages.
     # Overwritten by the normal path (if not _proceed_to_route) or by resume restore.
@@ -737,11 +742,16 @@ def process_pdf(
 
         try:
             probe_img_fast = get_image(ROTATION_PROBE_DPI, 0)
-            base_fast, scores_fast, _ = rotation_probe_best(
-                probe_img_fast,
-                return_scores=True,
-                preferred_angles=ALLOWED_ROTATION_ANGLES,
-            )
+            _mk1 = frozenset(ALLOWED_ROTATION_ANGLES)
+            if _mk1 in _rotation_probe_memo:
+                base_fast, scores_fast, _ = _rotation_probe_memo[_mk1]
+            else:
+                base_fast, scores_fast, _ptexts1 = rotation_probe_best(
+                    probe_img_fast,
+                    return_scores=True,
+                    preferred_angles=ALLOWED_ROTATION_ANGLES,
+                )
+                _rotation_probe_memo[_mk1] = (base_fast, scores_fast, _ptexts1)
             if base_fast in (90, 180, 270):
                 best_score = float(scores_fast.get(base_fast, 0))
                 second_best = max(float(v) for k, v in scores_fast.items() if k != base_fast)
@@ -891,11 +901,16 @@ def process_pdf(
             elif _is_image_only:
                 probe_angles.extend([90, 270, 180])
 
-            base_fast, scores_fast, texts_fast = rotation_probe_best(
-                probe_img_fast,
-                return_scores=True,
-                preferred_angles=tuple(probe_angles),
-            )
+            _mk2 = frozenset(probe_angles)
+            if _mk2 in _rotation_probe_memo:
+                base_fast, scores_fast, texts_fast = _rotation_probe_memo[_mk2]
+            else:
+                base_fast, scores_fast, texts_fast = rotation_probe_best(
+                    probe_img_fast,
+                    return_scores=True,
+                    preferred_angles=tuple(probe_angles),
+                )
+                _rotation_probe_memo[_mk2] = (base_fast, scores_fast, texts_fast)
             if base_fast not in ALLOWED_ROTATION_ANGLES:
                 base_fast = 0
 
@@ -977,11 +992,16 @@ def process_pdf(
         else:
             try:
                 _probe_img = get_image(ROTATION_PROBE_DPI, 0)
-                _, _rot_scores, _ = rotation_probe_best(
-                    _probe_img,
-                    return_scores=True,
-                    preferred_angles=(0, 90, 270, 180),
-                )
+                _mk3 = frozenset((0, 90, 270, 180))
+                if _mk3 in _rotation_probe_memo:
+                    _base3, _rot_scores, _ = _rotation_probe_memo[_mk3]
+                else:
+                    _base3, _rot_scores, _ptexts3 = rotation_probe_best(
+                        _probe_img,
+                        return_scores=True,
+                        preferred_angles=(0, 90, 270, 180),
+                    )
+                    _rotation_probe_memo[_mk3] = (_base3, _rot_scores, _ptexts3)
                 rotated_angles = sorted(
                     rotated_angles,
                     key=lambda a: float(_rot_scores.get(a, 0)),
@@ -1060,11 +1080,16 @@ def process_pdf(
         if rot is None:
             try:
                 _probe_img = get_image(ROTATION_PROBE_DPI, 0)
-                _base, _scores, _ = rotation_probe_best(
-                    _probe_img,
-                    return_scores=True,
-                    preferred_angles=ALLOWED_ROTATION_ANGLES,
-                )
+                _mk4 = frozenset(ALLOWED_ROTATION_ANGLES)
+                if _mk4 in _rotation_probe_memo:
+                    _base, _scores, _ = _rotation_probe_memo[_mk4]
+                else:
+                    _base, _scores, _ptexts4 = rotation_probe_best(
+                        _probe_img,
+                        return_scores=True,
+                        preferred_angles=ALLOWED_ROTATION_ANGLES,
+                    )
+                    _rotation_probe_memo[_mk4] = (_base, _scores, _ptexts4)
                 if _base in (90, 180, 270):
                     _best = float(_scores.get(_base, 0))
                     _second = max(float(v) for k, v in _scores.items() if k != _base)
@@ -1806,9 +1831,28 @@ def process_pdf(
         ):
             _probe_angles = (0, _rotation_hint)
             log(f"[ROTATION-PROBE] Narrowed probe to {_probe_angles} (image-only + hint={_rotation_hint}°)")
-        base_angle, probe_scores, probe_texts = rotation_probe_best(
-            probe_img, return_scores=True, preferred_angles=_probe_angles
-        )
+        _mk5      = frozenset(_probe_angles)
+        _full_key = frozenset(ALLOWED_ROTATION_ANGLES)
+        if _mk5 in _rotation_probe_memo:
+            base_angle, probe_scores, probe_texts = _rotation_probe_memo[_mk5]
+        elif len(_probe_angles) < len(ALLOWED_ROTATION_ANGLES) and _full_key in _rotation_probe_memo:
+            # Derive subset result from the cached full-set probe — zero extra Tesseract calls.
+            # All four angles were already OCR'd; scores are deterministic for the same image.
+            _cb, _cs, _ct = _rotation_probe_memo[_full_key]
+            _sub_scores = {a: (_cs.get(a, 0.0) if a in _probe_angles else 0.0)
+                           for a in ALLOWED_ROTATION_ANGLES}
+            _sub_texts  = {a: (_ct.get(a, ("", "")) if a in _probe_angles else ("", ""))
+                           for a in ALLOWED_ROTATION_ANGLES}
+            _sub_best   = max(_sub_scores, key=lambda r: _sub_scores[r])
+            if _sub_best != 0 and (_sub_scores[_sub_best] - _sub_scores.get(0, 0.0)) < ROTATION_PROBE_MIN_FLIP_MARGIN:
+                _sub_best = 0
+            base_angle, probe_scores, probe_texts = _sub_best, _sub_scores, _sub_texts
+            _rotation_probe_memo[_mk5] = (base_angle, probe_scores, probe_texts)
+        else:
+            base_angle, probe_scores, probe_texts = rotation_probe_best(
+                probe_img, return_scores=True, preferred_angles=_probe_angles
+            )
+            _rotation_probe_memo[_mk5] = (base_angle, probe_scores, probe_texts)
 
         if base_angle not in ALLOWED_ROTATION_ANGLES:
             base_angle = 0

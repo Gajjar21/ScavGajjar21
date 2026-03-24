@@ -262,8 +262,8 @@ def _headers(token: str, accept: str = "application/json, text/plain, */*") -> d
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
         "Accept": accept,
-        "Origin": "https://shipment-portal-g.prod.cloud.fedex.com",
-        "Referer": "https://shipment-portal-g.prod.cloud.fedex.com/",
+        "Origin": config.EDM_PORTAL_URL,
+        "Referer": config.EDM_PORTAL_URL + "/",
     }
 
 
@@ -815,6 +815,9 @@ def find_duplicate_pages(
     focused_edm_idx: int | None = None
     edm_match_counts: list[int] = [0] * len(edm_pdf_list)
     tier1_candidate_docs: set[int] = set()
+    # Gate signal scores: doc_idx → cumulative probe hits (used to prioritise Tier 2).
+    # Gate 1 hash hit = 100, Gate 2 pHash = 10, text = 5, OCR = 3.
+    gate2_doc_scores: dict[int, int] = {}
 
     if edm_fingerprints is None:
         edm_fingerprints = build_edm_fingerprints(
@@ -1101,6 +1104,7 @@ def find_duplicate_pages(
                 tier1_hit = True
                 for doc_idx, _ in matches:
                     tier1_candidate_docs.add(doc_idx)
+                    gate2_doc_scores[doc_idx] = gate2_doc_scores.get(doc_idx, 0) + 100
                 mdoc, mei = matches[0]
                 tier1_hit_events.append(f"HASH-GATE inc_p{ii+1} edm{mdoc+1}_p{mei+1}")
             if hash_gate_hit:
@@ -1127,61 +1131,63 @@ def find_duplicate_pages(
                 if 0 <= idx < total_incoming and idx not in probe_indices:
                     probe_indices.append(idx)
 
+            # Track which probe pages already have pHash or text signal.
+            # Probe C (OCR) is skipped only for pages that already have cheaper signal —
+            # not suppressed globally when other probe pages happened to hit.
+            gate2_page_hits: set[int] = set()
+
             for ii in probe_indices:
                 if inc_is_ccd(ii):
                     continue
                 probe_ran = True
 
-                # Probe A: pHash
+                # Probe A: pHash — run for every probe page, collect per-doc scores.
+                # No early-exit: accumulate all signal before deciding on Tier 2 order.
                 iph = get_inc_phash(ii) if ii < PAGE_OCR_LIMIT else None
                 if iph is not None:
                     for doc_idx in range(len(edm_pdf_list)):
                         if not doc_valid(doc_idx):
                             continue
-                        limit = min(doc_page_count(doc_idx), TIER1_EDM_PAGE_LIMIT, PAGE_OCR_LIMIT)
+                        limit = min(doc_page_count(doc_idx), TIER2_EDM_PAGE_LIMIT, PAGE_OCR_LIMIT)
                         for ei in range(limit):
                             eph = get_edm_phash(doc_idx, ei)
                             if eph is None:
                                 continue
                             diff = iph - eph
                             if diff <= PHASH_THRESHOLD:
-                                tier1_hit = True
                                 tier1_candidate_docs.add(doc_idx)
+                                gate2_doc_scores[doc_idx] = gate2_doc_scores.get(doc_idx, 0) + 10
+                                gate2_page_hits.add(ii)
                                 tier1_hit_events.append(
                                     f"PROBE-PHASH(diff={diff}) inc_p{ii+1} edm{doc_idx+1}_p{ei+1}"
                                 )
-                                break
-                        if tier1_hit:
-                            break
-                if tier1_hit:
-                    break
+                                break  # one hit per doc per probe page is enough
 
-                # Probe B: embedded text (only when both sides have text layer).
+                # Probe B: embedded text — run for every probe page, collect per-doc scores.
                 in_text = get_inc_text(ii)
                 if len(in_text) >= TEXT_LAYER_MIN_CHARS:
                     for doc_idx in range(len(edm_pdf_list)):
                         if not doc_valid(doc_idx):
                             continue
-                        limit = min(doc_page_count(doc_idx), TIER1_EDM_PAGE_LIMIT, PAGE_OCR_LIMIT)
+                        limit = min(doc_page_count(doc_idx), TIER2_EDM_PAGE_LIMIT, PAGE_OCR_LIMIT)
                         for ei in range(limit):
                             ed_text = get_edm_text(doc_idx, ei)
                             if len(ed_text) < TEXT_LAYER_MIN_CHARS:
                                 continue
                             score = text_similarity(in_text, ed_text)
                             if score >= TEXT_SIMILARITY_THRESHOLD:
-                                tier1_hit = True
                                 tier1_candidate_docs.add(doc_idx)
+                                gate2_doc_scores[doc_idx] = gate2_doc_scores.get(doc_idx, 0) + 5
+                                gate2_page_hits.add(ii)
                                 tier1_hit_events.append(
                                     f"PROBE-TEXT(score={score:.1f}) inc_p{ii+1} edm{doc_idx+1}_p{ei+1}"
                                 )
-                                break
-                        if tier1_hit:
-                            break
-                if tier1_hit:
-                    break
+                                break  # one hit per doc per probe page is enough
 
-                # Probe C: OCR fallback on sampled pages.
-                if ii < OCR_COMPARE_LIMIT:
+                # Probe C: OCR fallback — skip only for pages that already have pHash/text signal.
+                # Runs for scan-only pages even when other probe pages hit, closing the gap
+                # where an incoming scan has a text-layer duplicate on EDM.
+                if ii < OCR_COMPARE_LIMIT and ii not in gate2_page_hits:
                     inc_has_text_layer = len(in_text) >= TEXT_LAYER_MIN_CHARS
                     in_cmp = in_text if inc_has_text_layer else get_inc_ocr(ii)
                     if in_cmp:
@@ -1190,7 +1196,7 @@ def find_duplicate_pages(
                                 continue
                             limit = min(
                                 doc_page_count(doc_idx),
-                                TIER1_EDM_PAGE_LIMIT,
+                                TIER2_EDM_PAGE_LIMIT,
                                 OCR_COMPARE_LIMIT,
                             )
                             for ei in range(limit):
@@ -1203,16 +1209,14 @@ def find_duplicate_pages(
                                     continue
                                 score = text_similarity(in_cmp, ed_cmp)
                                 if score >= TEXT_SIMILARITY_THRESHOLD:
-                                    tier1_hit = True
                                     tier1_candidate_docs.add(doc_idx)
+                                    gate2_doc_scores[doc_idx] = gate2_doc_scores.get(doc_idx, 0) + 3
                                     tier1_hit_events.append(
                                         f"PROBE-OCR(score={score:.1f}) inc_p{ii+1} edm{doc_idx+1}_p{ei+1}"
                                     )
-                                    break
-                            if tier1_hit:
-                                break
-                if tier1_hit:
-                    break
+                                    break  # one hit per doc per probe page is enough
+
+            tier1_hit = bool(gate2_doc_scores)
 
         if not tier1_hit:
             return duplicate_pages, {
@@ -1229,7 +1233,14 @@ def find_duplicate_pages(
             }
 
         # Any gate/probe hit means proceed to full Tier2 checks.
-        tier1_candidate_docs = {i for i in range(len(edm_pdf_list)) if doc_valid(i)}
+        # Sort docs by descending gate signal (highest score first) so that the
+        # most likely duplicate is confirmed earliest, letting subsequent pages
+        # short-circuit via the `ii in duplicate_pages` guards.
+        _tier2_doc_order: list[int] = sorted(
+            (i for i in range(len(edm_pdf_list)) if doc_valid(i)),
+            key=lambda d: (-gate2_doc_scores.get(d, 0), d),
+        )
+        tier1_candidate_docs = set(_tier2_doc_order)
 
         # ---------------------------------------------------------------------
         # Tier 2: full compare against EDM p1-10 for Tier1 candidate docs only.
@@ -1267,8 +1278,8 @@ def find_duplicate_pages(
             if iph is None:
                 continue
 
-            for doc_idx in range(len(edm_pdf_list)):
-                if not doc_valid(doc_idx) or not should_check_doc(doc_idx):
+            for doc_idx in _tier2_doc_order:
+                if not should_check_doc(doc_idx):
                     continue
 
                 limit = min(doc_page_count(doc_idx), TIER2_EDM_PAGE_LIMIT, PAGE_OCR_LIMIT)
@@ -1301,8 +1312,8 @@ def find_duplicate_pages(
             if len(in_text) < TEXT_LAYER_MIN_CHARS:
                 continue
 
-            for doc_idx in range(len(edm_pdf_list)):
-                if not doc_valid(doc_idx) or not should_check_doc(doc_idx):
+            for doc_idx in _tier2_doc_order:
+                if not should_check_doc(doc_idx):
                     continue
 
                 limit = min(doc_page_count(doc_idx), TIER2_EDM_PAGE_LIMIT, PAGE_OCR_LIMIT)
@@ -1340,8 +1351,8 @@ def find_duplicate_pages(
             if not in_cmp:
                 continue
 
-            for doc_idx in range(len(edm_pdf_list)):
-                if not doc_valid(doc_idx) or not should_check_doc(doc_idx):
+            for doc_idx in _tier2_doc_order:
+                if not should_check_doc(doc_idx):
                     continue
 
                 limit = min(doc_page_count(doc_idx), TIER2_EDM_PAGE_LIMIT, OCR_COMPARE_LIMIT)
