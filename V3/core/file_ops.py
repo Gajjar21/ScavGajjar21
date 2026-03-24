@@ -16,6 +16,7 @@ import shutil
 import threading
 import time
 from datetime import datetime
+from logging.handlers import RotatingFileHandler as _RotatingFileHandler
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -38,16 +39,21 @@ _csv_lock = threading.Lock()  # guards append_stage_cache_row + append_to_awb_lo
 # LOGGING
 # =============================================================================
 
-_log_fh = None  # module-level file handle — opened once, held for session
+_log_fh: "_RotatingFileHandler | None" = None  # module-level rotating handler
 
 
-def _get_log_fh():
-    """Return (and lazily open) the persistent log file handle."""
+def _get_log_fh() -> "_RotatingFileHandler | None":
+    """Return (and lazily open) the rotating log file handler."""
     global _log_fh
-    if _log_fh is None or _log_fh.closed:
+    if _log_fh is None or _log_fh.stream is None or _log_fh.stream.closed:
         try:
             LOG_DIR.mkdir(parents=True, exist_ok=True)
-            _log_fh = open(config.PIPELINE_LOG, "a", encoding="utf-8", buffering=1)  # line-buffered
+            _log_fh = _RotatingFileHandler(
+                config.PIPELINE_LOG,
+                maxBytes=50 * 1024 * 1024,  # 50 MB per file
+                backupCount=2,              # keeps .1 and .2 → 150 MB max
+                encoding="utf-8",
+            )
         except Exception:
             _log_fh = None
     return _log_fh
@@ -61,7 +67,13 @@ def log(msg: str) -> None:
     try:
         fh = _get_log_fh()
         if fh is not None:
-            fh.write(line + "\n")
+            # Rotate before writing if the file is at capacity
+            if fh.maxBytes > 0:
+                fh.stream.seek(0, 2)
+                if fh.stream.tell() + len(line) + 1 >= fh.maxBytes:
+                    fh.doRollover()
+            fh.stream.write(line + "\n")
+            fh.stream.flush()
     except Exception:
         pass
 

@@ -108,7 +108,13 @@ def _build_logger() -> logging.Logger:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    fh = logging.FileHandler(config.EDM_LOG, encoding="utf-8")
+    from logging.handlers import RotatingFileHandler
+    fh = RotatingFileHandler(
+        config.EDM_LOG,
+        maxBytes=20 * 1024 * 1024,  # 20 MB per file
+        backupCount=1,              # keeps .1 → 40 MB max
+        encoding="utf-8",
+    )
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 
