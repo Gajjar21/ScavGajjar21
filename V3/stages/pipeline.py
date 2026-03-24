@@ -514,6 +514,13 @@ def process_pdf(
 
     def close_pdf():
         nonlocal page_doc, page
+        # Release cached PIL images to avoid memory build-up on long batch runs
+        for _img in list(image_cache.values()):
+            try:
+                _img.close()
+            except Exception:
+                pass
+        image_cache.clear()
         if page_doc is not None:
             try:
                 page_doc.close()
@@ -760,7 +767,8 @@ def process_pdf(
                     _fastlane_rotation_probe_angle = int(base_fast)
                     _fastlane_rotation_probe_margin = float(margin)
                     _rotation_hint = _fastlane_rotation_probe_angle
-        except Exception:
+        except Exception as _e:
+            log(f"[DEBUG] _get_fastlane_certain_rotation_signal: {_e}")
             return None, 0.0
 
         return _fastlane_rotation_probe_angle, _fastlane_rotation_probe_margin
@@ -1007,8 +1015,8 @@ def process_pdf(
                     key=lambda a: float(_rot_scores.get(a, 0)),
                     reverse=True,
                 )
-            except Exception:
-                pass
+            except Exception as _e:
+                log(f"[DEBUG] Rotation score sort exception: {_e}")
 
         rot = rotated_angles[0]
         txt_chunks: List[str] = []
@@ -1097,7 +1105,8 @@ def process_pdf(
                     if _margin >= float(ROTATION_PROBE_LIKELY_MARGIN):
                         rot = int(_base)
                         _rotation_hint = rot
-            except Exception:
+            except Exception as _e:
+                log(f"[DEBUG] _run_fastlane_quick_rotated_psm6 probe: {_e}")
                 rot = None
 
         if rot not in (90, 180, 270):
@@ -2510,7 +2519,7 @@ def process_pdf(
         # re-running any stage that already completed.
         _captured: Dict[str, Any] = {
             "probe_scores":         dict(probe_scores),
-            "probe_texts":          {k: (v[0], v[1]) for k, v in probe_texts.items()},
+            "probe_texts":          {k: (v[0], v[1] if len(v) > 1 else "") for k, v in probe_texts.items()},
             "base_angle":           base_angle,
             "_angle_certainty":     _angle_certainty,
             "_rotation_hint":       _rotation_hint,

@@ -137,6 +137,9 @@ EDM_PORTAL_URL        = os.getenv("EDM_PORTAL_URL", "").strip()
 EDM_METADATA_URL = EDM_BASE_URL + "/edm/protocol/retrieve/groups/metadata"
 EDM_DOWNLOAD_URL = EDM_BASE_URL + "/edm/protocol/downloadDocuments"
 ENABLE_EDM_FALLBACK   = _bool("ENABLE_EDM_FALLBACK", False)
+if ENABLE_EDM_FALLBACK and not EDM_TOKEN:
+    print("[config] WARNING: ENABLE_EDM_FALLBACK=true but EDM_TOKEN is not set in .env — "
+          "Stage 6 will be skipped unless token.txt is present.")
 
 # ── OCR / Matching ───────────────────────────────────────────────────────────
 AWB_LEN                     = 12

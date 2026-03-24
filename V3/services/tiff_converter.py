@@ -143,7 +143,11 @@ def _convert_one(pdf_path: Path) -> tuple[str, str, int]:
     tiff_path = OUTPUT_DIR / (pdf_path.stem + ".tiff")
 
     if SKIP_IF_EXISTS and tiff_path.exists():
-        return (pdf_path.name, "SKIP", 0)
+        if tiff_path.stat().st_size > 1024:
+            return (pdf_path.name, "SKIP", 0)
+        print(f"  [WARN] Existing TIFF {tiff_path.name} appears corrupt "
+              f"(size={tiff_path.stat().st_size}), re-converting")
+        tiff_path.unlink()
 
     try:
         pages = pdf_to_multipage_tiff(pdf_path, tiff_path)

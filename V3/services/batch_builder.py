@@ -178,6 +178,12 @@ def precompute_batch_plan(resolved: list[dict]) -> dict[int, int]:
 
     for r in resolved:
         sp = r["total_pages"]
+        if sp > MAX_PAGES_PER_BATCH:
+            print(f"  [WARN] {' | '.join(r.get('pdf_names', ['?']))} has {sp} pages "
+                  f"> MAX_PAGES_PER_BATCH={MAX_PAGES_PER_BATCH}; placing alone in its own batch")
+            if pages_in_current_batch > 0:
+                batch_no += 1
+                pages_in_current_batch = 0
         if pages_in_current_batch > 0 and (pages_in_current_batch + sp > MAX_PAGES_PER_BATCH):
             batch_no += 1
             pages_in_current_batch = 0
@@ -286,8 +292,10 @@ def write_excel_sequence(resolved: list[dict]) -> None:
             r["batch_no"],
             r.get("tier", ""),
         ])
-    wb.save(SEQUENCE_XLSX)
+    _tmp = SEQUENCE_XLSX.with_suffix(".xlsx.tmp")
+    wb.save(_tmp)
     wb.close()
+    os.replace(_tmp, SEQUENCE_XLSX)
 
 
 # =========================

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -104,16 +105,18 @@ class InboxPDFHandler(FileSystemEventHandler):
     def __init__(self, q: Queue):
         self.q = q
         self._last_seen: dict[str, float] = {}
+        self._lock = threading.Lock()
 
     def _enqueue(self, path: str) -> None:
         p = str(path)
         if not p.lower().endswith(".pdf"):
             return
-        now = time.time()
-        # De-bounce: skip if we saw this path less than 0.8 s ago
-        if now - self._last_seen.get(p, 0) < 0.8:
-            return
-        self._last_seen[p] = now
+        with self._lock:
+            now = time.time()
+            # De-bounce: skip if we saw this path less than 0.8 s ago
+            if now - self._last_seen.get(p, 0) < 0.8:
+                return
+            self._last_seen[p] = now
         self.q.put(p)
 
     def on_created(self, event):
@@ -303,6 +306,7 @@ def main() -> None:
                             _state_out=state_out,
                         )
                         if result == "TIMEOUT_DEFERRED":
+                            state_out["_enqueued_ts"] = time.time()
                             timeout_deferred_state[path] = state_out
                             log(
                                 f"[TIMEOUT-DEFERRED] {os.path.basename(path)} "
@@ -324,6 +328,12 @@ def main() -> None:
                     and timeout_deferred_state
                 ):
                     _tp_count = 0
+                    # Evict entries older than 24 hours (stale / file disappeared)
+                    _stale = [p for p, v in timeout_deferred_state.items()
+                              if time.time() - v.get("_enqueued_ts", 0) > 86400]
+                    for _sp in _stale:
+                        log(f"[DEFERRED-EVICT] Evicting stale entry (>24h): {os.path.basename(_sp)}")
+                        timeout_deferred_state.pop(_sp)
                     while timeout_deferred_state and _tp_count < _THIRD_BATCH:
                         path, saved_state = next(iter(timeout_deferred_state.items()))
                         del timeout_deferred_state[path]

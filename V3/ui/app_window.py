@@ -428,6 +428,39 @@ class App(tk.Tk):
         else:
             self.after(100, self._prompt_employee_number)
 
+        self.after(200, self._run_startup_checks)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # STARTUP CHECKS
+    # ─────────────────────────────────────────────────────────────────────────
+    def _run_startup_checks(self):
+        """Show early warnings for missing Tesseract or AWB database."""
+        if not config.TESSERACT_PATH.exists():
+            messagebox.showerror(
+                "Startup Error",
+                f"Tesseract not found:\n{config.TESSERACT_PATH}\n\nCheck TESSERACT_PATH in .env",
+            )
+            self.destroy()
+            sys.exit(1)
+        if not config.AWB_EXCEL_PATH.exists():
+            messagebox.showwarning(
+                "AWB Database Missing",
+                f"AWB database not found:\n{config.AWB_EXCEL_PATH}\n\n"
+                "Matching will fail until it is placed there.",
+            )
+
+    def _trim_log_rows(self):
+        """Scheduled background trim to keep log widget memory bounded."""
+        if getattr(self, "_is_closing", False):
+            return
+        while len(self._log_rows) > self._ui_log_max_rows:
+            row = self._log_rows.pop(0)
+            try:
+                row["row"].destroy()
+            except Exception:
+                pass
+        self.after(60000, self._trim_log_rows)
+
     # ─────────────────────────────────────────────────────────────────────────
     # UI CONSTRUCTION
     # ─────────────────────────────────────────────────────────────────────────
@@ -1231,7 +1264,8 @@ class App(tk.Tk):
         self._log_export_lines = []
         self._log_search_job = None
         self._log_filter_refresh_job = None
-        self._ui_log_max_rows = 400
+        self._ui_log_max_rows = 250
+        self.after(60000, self._trim_log_rows)
 
         # ═══════════════════════════════════════════════════════════════════════
         # STATUS BAR + BOTTOM BAR
@@ -1891,6 +1925,9 @@ class App(tk.Tk):
 
         final_img = img.resize((size, size), Image.Resampling.LANCZOS)
         icon = ImageTk.PhotoImage(final_img)
+        # FIFO eviction: keep each icon cache bounded to 64 entries
+        while len(cache) >= 64:
+            cache.pop(next(iter(cache)))
         cache[key] = icon
         return icon
 
@@ -3850,6 +3887,10 @@ class App(tk.Tk):
             self.after(0, lambda: self.btn_get_awb.config(text="Start AWB"))
             self.after(0, self._refresh_live_status)
             self.set_status("AWB stopped." if rc == 0 else "AWB ended with errors.")
+            if rc != 0 and not self._is_closing:
+                self.log_append(
+                    f"[HOTFOLDER CRASH] Process exited with code {rc} — click Start AWB to restart"
+                )
 
         threading.Thread(target=reader, daemon=True).start()
 

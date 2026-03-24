@@ -13,6 +13,7 @@ import hashlib
 import os
 import re
 import shutil
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +28,10 @@ NEEDS_REVIEW_DIR = config.NEEDS_REVIEW_DIR
 AWB_LOGS_PATH = config.AWB_LOGS_PATH
 LOG_DIR = config.LOG_DIR
 STAGE_CACHE_CSV = config.STAGE_CACHE_CSV
+
+
+# ── Module-level locks ────────────────────────────────────────────────────────
+_csv_lock = threading.Lock()  # guards append_stage_cache_row + append_to_awb_logs_excel
 
 
 # =============================================================================
@@ -254,12 +259,13 @@ def append_stage_cache_row(
     ]
     try:
         STAGE_CACHE_CSV.parent.mkdir(parents=True, exist_ok=True)
-        new_file = not STAGE_CACHE_CSV.exists()
-        with open(STAGE_CACHE_CSV, "a", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            if new_file:
-                w.writerow(headers)
-            w.writerow(row)
+        with _csv_lock:
+            new_file = not STAGE_CACHE_CSV.exists()
+            with open(STAGE_CACHE_CSV, "a", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                if new_file:
+                    w.writerow(headers)
+                w.writerow(row)
     except Exception as e:
         log(f"[STAGE_CACHE] Warning: could not write stage cache row: {e}")
 
@@ -289,12 +295,13 @@ def append_to_awb_logs_excel(
     row = [awb, os.path.basename(source_file), ts, match_method, status]
     try:
         AWB_LOGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        new_file = not _AWB_LOGS_CSV_BUFFER.exists()
-        with open(_AWB_LOGS_CSV_BUFFER, "a", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            if new_file:
-                w.writerow(_AWB_LOGS_HEADERS)
-            w.writerow(row)
+        with _csv_lock:
+            new_file = not _AWB_LOGS_CSV_BUFFER.exists()
+            with open(_AWB_LOGS_CSV_BUFFER, "a", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                if new_file:
+                    w.writerow(_AWB_LOGS_HEADERS)
+                w.writerow(row)
     except Exception as e:
         log(f"[AWB_LOGS] Warning: could not buffer row: {e}")
         return
