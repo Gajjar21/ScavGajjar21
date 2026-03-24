@@ -276,7 +276,7 @@ def main() -> None:
                             str(path), awb_set, by_prefix, by_suffix,
                             allow_long_pass=False,
                         )
-                        if result == "DEFERRED":
+                        if result in ("DEFERRED", "DEFERRED_URGENT"):
                             deferred_long_pass.append(str(path))
                     else:
                         process_pdf(
