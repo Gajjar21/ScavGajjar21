@@ -1219,17 +1219,25 @@ def process_pdf(
         return None
 
     def _run_early_hint_rotated_probe_strict() -> bool:
-        """Early strict rotated probe for scan-profile image-only fast-lane docs.
+        """Early rotated probe for scan-profile image-only fast-lane docs.
 
         Purpose:
         catch obvious rotated scans before Stage 2/3 at 0 deg to reduce
         urgent-defer churn and long-pass dependency.
 
+        Acceptance (in order):
+        - 400-pattern → always accept
+        - unique exact-HIGH in DB → accept
+        - unique exact-STANDARD in DB (no competing HIGH) → accept; rotation
+          hint was confirmed by angle detection so OCR at the correct angle
+          is reliable enough for a sole STANDARD candidate
+        Candidates are always merged into the running pool even when no
+        immediate match, so Stage 2/3 can build on them.
+
         Safety:
         - fast-lane only
         - scan-profile image-only only
         - only when angle detection produced a non-zero hint
-        - strict acceptance only (400-pattern or unique exact-high)
         """
         if allow_long_pass:
             return False
@@ -1254,14 +1262,30 @@ def process_pdf(
                 )
                 return True
 
-            high_set, _std_set = extract_tiered_candidates(txt, awb_set)
+            high_set, std_set = extract_tiered_candidates(txt, awb_set)
+            # Always merge so Stage 2/3 can use these candidates
+            merge_stage_candidates(high_set, std_set, f"FastEarlyHint-A{_rotation_hint}-PSM{psm}")
+            snapshot(f"FastEarlyHint-A{_rotation_hint}-PSM{psm}", high_set | std_set)
+
             high_db = sorted(high_set & awb_set)
             if len(high_db) == 1:
                 timings["ocr_main_ms"] += round((time.perf_counter() - probe_start) * 1000, 1)
                 complete_match(
                     high_db[0],
                     f"FastEarlyHint-A{_rotation_hint}-PSM{psm}-Exact-High",
-                    "Matched via early hint-rotated fast-lane probe (exact-high)",
+                    "Matched via early hint-rotated probe (exact-high)",
+                )
+                return True
+
+            # Accept unique STANDARD when rotation hint is confident (angle-detected)
+            # and there is no competing HIGH candidate
+            all_db = sorted((high_set | std_set) & awb_set)
+            if len(all_db) == 1 and not high_db:
+                timings["ocr_main_ms"] += round((time.perf_counter() - probe_start) * 1000, 1)
+                complete_match(
+                    all_db[0],
+                    f"FastEarlyHint-A{_rotation_hint}-PSM{psm}-Exact-Std",
+                    "Matched via early hint-rotated probe (unique standard)",
                 )
                 return True
 
@@ -1553,12 +1577,60 @@ def process_pdf(
             return "MATCHED"
 
         # =================================================================
-        # STAGE 2 — OCR MAIN at 0 deg
+        # STAGE 2 — OCR MAIN
         # =================================================================
         main_start = time.perf_counter()
         if (not allow_long_pass) and _scan_profile_image_only:
             _fastlane_ocr_budget_start = main_start
-        _ocr_angle = 0  # always 0 deg for Stages 2-3; probe runs later
+
+        # Fast-lane: if rotation hint is set, run Stage 2 at the hinted angle
+        # FIRST using full Stage 2 logic (clean gate + exact priority).
+        # This lets clearly rotated docs exit at the earliest possible point
+        # without burning time on useless 0° OCR.
+        if (
+            (not allow_long_pass)
+            and _scan_profile_image_only
+            and _rotation_hint in (90, 180, 270)
+        ):
+            for _psm_r in OCR_MAIN_PSMS:
+                _budget_exit = _return_on_budget_guard(f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}-pre")
+                if _budget_exit:
+                    return _budget_exit
+                txt_r = get_ocr_digits(DPI_MAIN, _rotation_hint, 175, False, _psm_r)
+                awb_400_r = extract_awb_from_400_pattern(txt_r)
+                if awb_400_r:
+                    timings["ocr_main_ms"] = round((time.perf_counter() - main_start) * 1000, 1)
+                    complete_match(awb_400_r, f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}-400",
+                                   "Matched by OCR-main rotated 400 pattern")
+                    return "MATCHED"
+                cr_r = run_clean_priority_gate(txt_r, f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}")
+                if cr_r["status"] == "matched":
+                    timings["ocr_main_ms"] = round((time.perf_counter() - main_start) * 1000, 1)
+                    complete_match(cr_r["awb"], f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}-{cr_r['method']}",
+                                   "Matched exact clean in OCR-main rotated")
+                    return "MATCHED"
+                if cr_r["status"] == "tie":
+                    timings["ocr_main_ms"] = round((time.perf_counter() - main_start) * 1000, 1)
+                    send_review(f"Ambiguous OCR-main Rot{_rotation_hint} PSM{_psm_r} clean tie: {cr_r.get('ties', [])[:8]}",
+                                f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}-{cr_r['method']}")
+                    return "NEEDS_REVIEW"
+                hm_r, sm_r = extract_tiered_candidates(txt_r, awb_set)
+                merge_stage_candidates(hm_r, sm_r, f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}")
+                snapshot(f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}", hm_r | sm_r)
+                res_r = run_exact_priority()
+                if res_r["status"] == "matched":
+                    timings["ocr_main_ms"] = round((time.perf_counter() - main_start) * 1000, 1)
+                    complete_match(res_r["awb"], f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}-{res_r['method']}",
+                                   "Matched exact in OCR-main rotated")
+                    return "MATCHED"
+                if res_r["status"] == "tie":
+                    timings["ocr_main_ms"] = round((time.perf_counter() - main_start) * 1000, 1)
+                    send_review(f"Ambiguous OCR-main Rot{_rotation_hint} PSM{_psm_r} exact tie: {res_r.get('ties', [])[:8]}",
+                                f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}-{res_r['method']}")
+                    return "NEEDS_REVIEW"
+            log(f"[FAST-LANE] Rot{_rotation_hint}° Stage-2 pre-pass no match — falling to 0°: {name}")
+
+        _ocr_angle = 0  # Stage 2/3 fallback always at 0°
 
         for _psm in OCR_MAIN_PSMS:
             _budget_exit = _return_on_budget_guard(f"OCR-Main-PSM{_psm}-pre")
@@ -1605,6 +1677,11 @@ def process_pdf(
                     f"OCR-Main-PSM{_psm}-{res['method']}",
                 )
                 return "NEEDS_REVIEW"
+            # Skip PSM11 at 0° if rotation hint set and PSM6 at 0° found nothing —
+            # the correct angle was already tried in the rotated pre-pass above.
+            if _psm == 6 and _rotation_hint in (90, 180, 270) and not (hm | sm) and not allow_long_pass:
+                log(f"[FAST] Skipping OCR-Main PSM11 at 0° — rotated hint={_rotation_hint}°, PSM6 empty: {name}")
+                break
             # Skip PSM11 if PSM6 found nothing and earlier stages have quality candidates
             if _psm == 6 and _has_quality_candidates() and not (hm | sm):
                 log("[FAST] Skipping OCR-Main PSM11 — PSM6 empty, quality candidates already present")
