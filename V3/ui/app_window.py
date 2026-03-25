@@ -1014,6 +1014,21 @@ class App(tk.Tk):
         perf_body = tk.Frame(perf_card, bg=PANEL_BG)
         perf_body.pack(fill="both", expand=True, padx=14, pady=12)
 
+        # ── Today's date + avg processing time ───────────────────────────────
+        perf_meta_row = tk.Frame(perf_body, bg=PANEL_BG)
+        perf_meta_row.pack(fill="x", pady=(0, 8))
+        self._perf_date_lbl = tk.Label(
+            perf_meta_row,
+            text=f"Today  ·  {time.strftime('%A, %d %b %Y')}",
+            font=(FONT_SMALL[0], 8), fg=TEXT_MUTED, bg=PANEL_BG, anchor="w",
+        )
+        self._perf_date_lbl.pack(side="left")
+        self._perf_avg_lbl = tk.Label(
+            perf_meta_row, text="Avg: —",
+            font=(FONT_SMALL[0], 8), fg=TEXT_SEC, bg=PANEL_BG, anchor="e",
+        )
+        self._perf_avg_lbl.pack(side="right")
+
         # ── Big metric tiles (Processed / Complete / Review / Failed) ─────────
         metric_row = tk.Frame(perf_body, bg=PANEL_BG)
         metric_row.pack(fill="x", pady=(0, 12))
@@ -1036,7 +1051,7 @@ class App(tk.Tk):
             self._stat_labels[key] = val
 
         _perf_tile(0, "PROCESSED", "hot_total",    TEXT_FG,  "#f0f5fc")
-        _perf_tile(1, "COMPLETE",  "hot_complete", OK,       "#edfaf2")
+        _perf_tile(1, "MATCH",     "hot_complete", OK,       "#edfaf2")
         _perf_tile(2, "REVIEW",    "hot_review",   REVIEW,   "#fff8ec")
         _perf_tile(3, "FAILED",    "hot_failed",   CRIT,     "#fff2f2")
 
@@ -1063,7 +1078,7 @@ class App(tk.Tk):
         sub_row.pack(fill="x")
         sub_row.columnconfigure(0, weight=1)
         sub_row.columnconfigure(1, weight=1)
-        sub_row.rowconfigure(0, minsize=90)
+        sub_row.rowconfigure(0, minsize=110)
 
         # EDM / Duplicates
         edm_sub = tk.Frame(sub_row, bg="#f7f9fc", bd=0,
@@ -1083,10 +1098,22 @@ class App(tk.Tk):
                  fg=TEXT_MUTED, bg="#f7f9fc").grid(row=0, column=1, sticky="sw",
                                                     padx=(3, 0), pady=(0, 3))
         self._stat_labels["edm_clean"] = edm_clean_n
-        edm_rej_lbl = tk.Label(edm_sub, text="Rejected: 0",
+        edm_detail = tk.Frame(edm_sub, bg="#f7f9fc")
+        edm_detail.pack(fill="x", padx=10, pady=(4, 9))
+        edm_partial_lbl = tk.Label(edm_detail, text="Partial-clean: 0",
+                                   font=FONT_SMALL, fg=TEXT_SEC, bg="#f7f9fc", anchor="w")
+        edm_partial_lbl.pack(fill="x")
+        edm_rej_lbl = tk.Label(edm_detail, text="Rejected: 0",
                                font=FONT_SMALL, fg=self._default_fg, bg="#f7f9fc", anchor="w")
-        edm_rej_lbl.pack(fill="x", padx=10, pady=(4, 9))
+        edm_rej_lbl.pack(fill="x")
+        tk.Frame(edm_detail, bg="#dde5f0", height=1).pack(fill="x", pady=(4, 2))
+        edm_checked_lbl = tk.Label(edm_detail, text="Checked today: 0",
+                                   font=(FONT_SMALL[0], FONT_SMALL[1]),
+                                   fg=TEXT_MUTED, bg="#f7f9fc", anchor="w")
+        edm_checked_lbl.pack(fill="x")
         self._stat_labels["edm_rejected"] = edm_rej_lbl
+        self._perf_edm_partial_lbl = edm_partial_lbl
+        self._perf_edm_total_lbl = edm_checked_lbl
 
         # Batch / Output
         batch_sub = tk.Frame(sub_row, bg="#f7f9fc", bd=0,
@@ -1114,6 +1141,20 @@ class App(tk.Tk):
                                   font=FONT_SMALL, fg=TEXT_SEC, bg="#f7f9fc", anchor="w")
         batch_tier_lbl.pack(fill="x", padx=10, pady=(0, 9))
         self._stat_labels["batch_tiers"] = batch_tier_lbl
+
+        # ── All-time summary strip ─────────────────────────────────────────────
+        alltime_strip = tk.Frame(perf_body, bg="#eef1f7", bd=0,
+                                 highlightthickness=1, highlightbackground="#ccd7e8")
+        alltime_strip.pack(fill="x", pady=(10, 0))
+        tk.Label(alltime_strip, text="ALL TIME",
+                 font=(FONT_SMALL[0], 7, "bold"), fg=TEXT_MUTED, bg="#eef1f7",
+                 padx=10, pady=6).pack(side="left")
+        self._alltime_summary_lbl = tk.Label(
+            alltime_strip,
+            text="—  matched  ·  —  review  ·  —  failed",
+            font=(FONT_SMALL[0], 8), fg=TEXT_SEC, bg="#eef1f7",
+        )
+        self._alltime_summary_lbl.pack(side="right", padx=10)
 
         # ── Live Activity (left panel, row 1) ─────────────────────────────────
         tl_card = _card(left)
@@ -1657,6 +1698,7 @@ class App(tk.Tk):
             (r"INFO\s+Launch batch service", "Batch service started"),
             (r"INFO\s+DONE", "Batch complete"),
             (r"OK\s+Cleaned\s+(\d+)\s+file\(s\)\s+from CLEAN\.", r"Clean queue cleared · \1"),
+            (r"^OK Preparing batch$", "Preparing batch"),
             (r"OK\s+===\s+\[BATCH\]\s+Prepare Batch\s+\((\d+)\s+file\(s\)\s+in CLEAN\)\s+===", r"Preparing batch from \1 clean files"),
             (r"INFO\s+Stopping EDM duplicate checker\.\.\.", ""),
             (r"INFO\s+EDM bypass active", ""),
@@ -1725,6 +1767,7 @@ class App(tk.Tk):
         show_patterns = (
             r"^\d{12}$",                                     # AWB match — just the number
             r"^AWB \d{12} — (Clean|Mixed|Duplicate)$",      # EDM result
+            r"^Preparing batch$",                            # Manual batch trigger
         )
         for pattern in show_patterns:
             if re.search(pattern, compact, flags=re.IGNORECASE):
@@ -2925,19 +2968,21 @@ class App(tk.Tk):
         """Update today's stats panel from V3.audit.tracker (non-blocking)."""
         def _pull():
             try:
-                from V3.audit.tracker import read_dashboard_stats
-                return read_dashboard_stats()
+                from V3.audit.tracker import read_dashboard_stats, read_alltime_stats
+                return read_dashboard_stats(), read_alltime_stats()
             except Exception:
-                return None
+                return None, None
 
-        def _apply(stats):
+        def _apply(result):
+            stats, alltime = result if result else (None, None)
             if not stats:
                 return
-            total    = int(stats["hot_total"]    or 0)
             complete = int(stats["hot_complete"] or 0)
             review   = int(stats["hot_review"]   or 0)
             failed   = int(stats["hot_failed"]   or 0)
-            self._stat_labels["hot_total"].config(text=str(total))
+            # PROCESSED = resolved files only (excludes IN-PROGRESS rows)
+            resolved = complete + review + failed
+            self._stat_labels["hot_total"].config(text=str(resolved))
             self._stat_labels["hot_complete"].config(text=str(complete))
             self._stat_labels["hot_review"].config(
                 text=str(review),
@@ -2945,25 +2990,34 @@ class App(tk.Tk):
             self._stat_labels["hot_failed"].config(
                 text=str(failed),
                 fg=CRIT if failed > 0 else self._default_fg)
-            # Progress bar — rate = matched / (matched + needs_review + failed).
-            # Denominator counts only files with a definitive outcome so that
-            # files still in the deferred queue don't deflate the percentage.
-            resolved = complete + review + failed
+            # Progress bar — rate = matched / resolved
             rate = complete / max(1, resolved)
             try:
                 self._perf_bar_fill.place(relwidth=rate)
                 self._perf_rate_lbl.config(
-                    text=f"{rate * 100:.1f}%  ({complete} / {resolved})")
+                    text=f"{rate * 100:.1f}%  ({complete} matched / {resolved} resolved)")
                 bar_color = OK if rate >= 0.9 else (REVIEW if rate >= 0.7 else CRIT)
                 self._perf_bar_fill.config(bg=bar_color)
             except Exception:
                 pass
-            edm_total = int(stats["edm_clean"] or 0) + int(stats["edm_partial"] or 0)
-            edm_rej   = int(stats["edm_rejected"] or 0)
-            self._stat_labels["edm_clean"].config(text=str(edm_total))
+            edm_clean_v   = int(stats["edm_clean"]    or 0)
+            edm_partial_v = int(stats["edm_partial"]  or 0)
+            edm_rej_v     = int(stats["edm_rejected"]  or 0)
+            edm_checked   = edm_clean_v + edm_partial_v + edm_rej_v
+            self._stat_labels["edm_clean"].config(text=str(edm_clean_v))
             self._stat_labels["edm_rejected"].config(
-                text=f"Rejected: {edm_rej}",
-                fg=CRIT if edm_rej > 0 else self._default_fg)
+                text=f"Rejected: {edm_rej_v}",
+                fg=CRIT if edm_rej_v > 0 else self._default_fg)
+            try:
+                self._perf_edm_partial_lbl.config(
+                    text=f"Partial-clean: {edm_partial_v}",
+                    fg=REVIEW if edm_partial_v > 0 else TEXT_SEC)
+                self._perf_edm_total_lbl.config(
+                    text=f"Checked today: {edm_checked}")
+                avg = str(stats.get("avg_secs", "N/A") or "N/A")
+                self._perf_avg_lbl.config(text=f"Avg: {avg}")
+            except Exception:
+                pass
             self._stat_labels["batches_built"].config(
                 text=str(int(stats["batches_built"] or 0)))
             self._stat_labels["tiffs"].config(
@@ -2973,36 +3027,16 @@ class App(tk.Tk):
             tw = int(stats.get("batch_tier_weak",   0) or 0)
             self._stat_labels["batch_tiers"].config(
                 text=f"Tier  S: {ts}  ·  M: {tm}  ·  W: {tw}")
-            session_batches = max(0, int(stats.get("batches_built", 0) or 0) - self._session_stats_baseline["batches_built"])
-            session_tiffs = max(0, int(stats.get("tiffs_converted", 0) or 0) - self._session_stats_baseline["tiffs_converted"])
-            self._batch_tier_totals["strong"] = max(0, int(stats.get("batch_tier_strong", 0) or 0) - self._session_stats_baseline["batch_tier_strong"])
-            self._batch_tier_totals["mix"] = max(0, int(stats.get("batch_tier_mix", 0) or 0) - self._session_stats_baseline["batch_tier_mix"])
-            self._batch_tier_totals["weak"] = max(0, int(stats.get("batch_tier_weak", 0) or 0) - self._session_stats_baseline["batch_tier_weak"])
-            session_sig = (
-                session_batches,
-                session_tiffs,
-                self._batch_tier_totals["strong"],
-                self._batch_tier_totals["mix"],
-                self._batch_tier_totals["weak"],
-            )
-            if self._last_batch_stat_signature is None:
-                self._last_batch_stat_signature = session_sig
-            elif session_sig != self._last_batch_stat_signature:
-                self._last_batch_stat_signature = session_sig
-                self._mark_summary_event("batch")
-                primary_text = f"{session_batches} Batches" if session_batches > 0 else "No batch output"
-                self._update_batch_prep_summary(
-                    state="READY" if (session_batches or session_tiffs) else "IDLE",
-                    primary=primary_text,
-                    line1=(
-                        f"Tier mix: Strong {self._batch_tier_totals['strong']}  ·  "
-                        f"Mix {self._batch_tier_totals['mix']}  ·  "
-                        f"Weak {self._batch_tier_totals['weak']}"
-                    ),
-                    line2="--",
-                    line3="--",
-                    fg=OK if (session_batches or session_tiffs) else TEXT_SEC,
-                )
+            # All-time strip
+            if alltime:
+                try:
+                    ac = int(alltime["all_complete"] or 0)
+                    ar = int(alltime["all_review"]   or 0)
+                    af = int(alltime["all_failed"]   or 0)
+                    self._alltime_summary_lbl.config(
+                        text=f"{ac:,}  matched  ·  {ar}  review  ·  {af}  failed")
+                except Exception:
+                    pass
 
         if self._stats_inflight:
             return
@@ -3843,6 +3877,7 @@ class App(tk.Tk):
         if self.batch_running:
             self.log_append("[BATCH] Batch already running.")
             return
+        self.log_append("OK Preparing batch")
         self._show_toast("Batch build started", "info")
         self.run_in_thread(lambda: self._run_batch_once(tag="[BATCH]", min_batches=1))
 

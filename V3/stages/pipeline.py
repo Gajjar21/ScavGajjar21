@@ -604,11 +604,6 @@ def process_pdf(
             side_effect_errors.append(f"stage_cache={exc}")
             log(f"[MATCH] Stage-cache warning ({name}): {exc}")
 
-        try:
-            record_hotfolder_end(name, awb, processed_name, method)
-        except Exception:
-            pass
-
         final_reason = reason
         if side_effect_errors:
             final_reason = f"{reason} | side_effects={'; '.join(side_effect_errors[:3])}"
@@ -647,7 +642,6 @@ def process_pdf(
         log_snapshots()
         close_pdf()
         safe_move(pdf_path, NEEDS_REVIEW_DIR)
-        record_hotfolder_needs_review(name, f"{reason} | cands={sorted(all_tried)}")
         finalize("NEEDS-REVIEW", "NEEDS_REVIEW", reason, method)
         if _ca_write_hotfolder is not None:
             try:

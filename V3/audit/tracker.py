@@ -527,6 +527,33 @@ def read_dashboard_stats() -> dict:
         return defaults
 
 
+def read_alltime_stats() -> dict:
+    """Return all-time pipeline outcome counts (no date filter).
+
+    Only counts rows with definitive results (COMPLETE / NEEDS_REVIEW / FAILED).
+    IN-PROGRESS rows are excluded so the total equals resolved files only.
+    """
+    defaults = {"all_complete": 0, "all_review": 0, "all_failed": 0}
+    try:
+        if not _AUDIT_XLSX.exists():
+            return defaults
+        wb = load_workbook(_AUDIT_XLSX, read_only=True, data_only=True)
+        stats = defaults.copy()
+        if SHEET_HOT in wb.sheetnames:
+            for row in wb[SHEET_HOT].iter_rows(min_row=2, values_only=True):
+                result = str(row[9] or "").upper()
+                if result == "COMPLETE":
+                    stats["all_complete"] += 1
+                elif result == "NEEDS_REVIEW":
+                    stats["all_review"] += 1
+                elif result == "FAILED":
+                    stats["all_failed"] += 1
+        wb.close()
+        return stats
+    except Exception:
+        return defaults
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # PIPELINE TRACKER COMPAT API
 # ═════════════════════════════════════════════════════════════════════════════
