@@ -1659,15 +1659,15 @@ class App(tk.Tk):
         generic_replacements = [
             ("Base:", "Workspace:"),
             ("Protected:", "Protected files:"),
-            ("EDM fallback: OFF (API calls bypassed)", "EDM bypass active"),
-            ("EDM fallback: ON (API calls allowed)", "EDM checks available"),
+            ("EDM fallback: OFF (API calls bypassed)", ""),
+            ("EDM fallback: ON (API calls allowed)", ""),
             ("Ready.", "System ready"),
-            ("Launch hotfolder service", "AWB service started"),
-            ("Launch EDM checker service", "EDM checker started"),
-            ("Launch batch service", "Batch service started"),
-            ("AWB hotfolder stopping", "AWB service stopping"),
-            ("Starting EDM duplicate checker...", "EDM checker starting"),
-            ("Stopping EDM duplicate checker...", "EDM checker stopping"),
+            ("Launch hotfolder service", ""),
+            ("Launch EDM checker service", ""),
+            ("Launch batch service", ""),
+            ("AWB hotfolder stopping", ""),
+            ("Starting EDM duplicate checker...", ""),
+            ("Stopping EDM duplicate checker...", ""),
         ]
         for src, dst in generic_replacements:
             compact = compact.replace(src, dst)
@@ -1694,29 +1694,47 @@ class App(tk.Tk):
             (r"INFO\s+DONE", "Batch complete"),
             (r"OK\s+Cleaned\s+(\d+)\s+file\(s\)\s+from CLEAN\.", r"Clean queue cleared · \1"),
             (r"OK\s+===\s+\[BATCH\]\s+Prepare Batch\s+\((\d+)\s+file\(s\)\s+in CLEAN\)\s+===", r"Preparing batch from \1 clean files"),
-            (r"INFO\s+Stopping EDM duplicate checker\.\.\.", "EDM checker stopping"),
-            (r"INFO\s+EDM bypass active", "EDM bypass active"),
+            (r"INFO\s+Stopping EDM duplicate checker\.\.\.", ""),
+            (r"INFO\s+EDM bypass active", ""),
+            (r"INFO\s+EDM checks.*", ""),
             (r"INFO\s+Workspace:\s+.+", "Workspace ready"),
             (r"INFO\s+Protected files:\s+.+", "Protected files loaded"),
-            (r"ERR\s+Scheduling:\s+two-pass.*", "Two-pass mode active"),
-            (r"INFO\s+Long-pass timeout budget per file:\s*\d+s", "Deep-pass time budget set"),
-            (r"INFO\s+Mode:\s+watchdog event-driven.*", "Live folder watch running"),
+            (r"ERR\s+Scheduling:\s+two-pass.*", ""),
+            (r"INFO\s+Long-pass timeout budget per file:\s*\d+s", ""),
+            (r"INFO\s+Mode:\s+watchdog event-driven.*", ""),
             (r"INFO\s+Loaded AWBs:\s*\d+.*", "AWB list loaded"),
             (r"INFO\s+Watching INBOX.*", "Watching inbox"),
             (r"INFO\s+INBOX:\s*file", "New file detected"),
             (r"INFO\s+Processing:\s+.+", "Checking next document"),
-            (r"INFO\s+\[FAST-LANE\].*", "Queued for deep check"),
-            (r"INFO\s+\[LONG-PASS\].*", "Deep check running"),
-            (r"INFO\s+\[ROTATION-PROBE\].*", "Rotation checked"),
+            (r"INFO\s+\[FAST-LANE\].*", ""),
+            (r"INFO\s+\[LONG-PASS\].*", ""),
+            (r"INFO\s+\[THIRD-PASS\].*", ""),
+            (r"INFO\s+\[TIMEOUT.*", ""),
+            (r"INFO\s+\[GLOBAL-TIMEOUT\].*", ""),
+            (r"INFO\s+\[ROTATION-PROBE\].*", ""),
+            (r"INFO\s+\[STAGE.*", ""),
+            (r"INFO\s+\[HEARTBEAT\].*", ""),
+            (r"INFO\s+\[RELOAD\].*", ""),
             (r".*file gone before processing.*", ""),
             (r"INFO\s+EXCEL:\s*Excel sheet", "Database sheet ready"),
             (r"INFO\s+LOGS:\s*Excel sheet", "Log sheet ready"),
             (r"\[TIMING\].*", ""),
-            (r"AWB MATCHED \([^)]+\):\s*\d+.*", "AWB matched"),
-            (r".*EDM toggle is OFF; bypassing EDM calls.*", "EDM bypass active"),
-            (r".*EDM toggle is ON; EDM calls enabled.*", "EDM checks enabled"),
-            (r".*EDM fallback set to OFF.*", "EDM bypass active"),
-            (r".*EDM fallback set to ON.*", "EDM checks enabled"),
+            # Raw hotfolder match line — suppress; JSON event shows the AWB number instead
+            (r"AWB MATCHED \([^)]+\):\s*\d+.*", ""),
+            # EDM verbose lines — all suppressed; JSON events show the clean result
+            (r"^={3,}$", ""),
+            (r"^File:\s+.+", ""),
+            (r"^AWB:\s+.+", ""),
+            (r"^Querying EDM metadata.*", ""),
+            (r"^Found \d+ existing EDM.*", ""),
+            (r"^Comparing incoming doc.*", ""),
+            (r"^New/updated file detected.*", ""),
+            (r"^No hash/probe hit.*", ""),
+            (r"^EDM Duplicate Checker.*", ""),
+            (r".*EDM toggle is OFF; bypassing EDM calls.*", ""),
+            (r".*EDM toggle is ON; EDM calls enabled.*", ""),
+            (r".*EDM fallback set to OFF.*", ""),
+            (r".*EDM fallback set to ON.*", ""),
             (r".*unexpected error on .* no such file or directory.*", ""),
         ]
         for pattern, replacement in front_end_rules:
@@ -1736,8 +1754,31 @@ class App(tk.Tk):
         if not compact:
             return None
         hide_patterns = (
-            r"^AWB \d+ matched\b",
-            r"^EDM \d+ (full clean|partial clean|unchecked)\b",
+            # ── Verbose AWB pipeline lines (now silenced) ──────────────────
+            r"^AWB matched$",          # raw "AWB MATCHED ..." without number
+            r"^AWB .+ updated$",       # other AWB_HOTFOLDER fallback events
+            r"^AWB .+ needs review$",  # not shown in feed
+            r"^AWB .+ to processed$",  # routing noise
+            r"^Deep check running$",
+            r"^Queued for deep check$",
+            r"^AWB list loaded$",
+            r"^New file detected$",
+            r"^Two-pass mode active$",
+            r"^Deep-pass time budget set$",
+            # ── EDM events not surfaced in feed ────────────────────────────
+            r"^EDM .+ unchecked",      # CLEAN-UNCHECKED — not a clean result
+            r"^EDM .+ updated$",       # fallback EDM events
+            # ── Service start/stop and button-press noise ──────────────────
+            r"^AWB service start",
+            r"^AWB service stop",
+            r"^EDM checker start",
+            r"^EDM checker stop",
+            r"^Batch service start",
+            r"^EDM bypass",
+            r"^EDM checks",
+            r"^Two-pass mode active$",
+            r"^Deep-pass time budget",
+            # ── Generic noise ──────────────────────────────────────────────
             r"^Batch prepared\b",
             r"^AWB Pipeline V3\b",
             r"^Workspace ready$",
@@ -2445,21 +2486,20 @@ class App(tk.Tk):
                 status = str(payload.get("status", "")).upper()
                 awb = str(payload.get("awb", "")).strip()
                 if stage == "AWB_HOTFOLDER":
-                    method = self._short_reason(payload.get("match_method", "N/A"), 34)
                     if status == "MATCHED":
-                        return self._compact_text(f"AWB {awb or '—'} matched · {method}", 82)
-                    if status == "NEEDS_REVIEW":
-                        return self._compact_text(f"AWB {awb or '—'} needs review", 82)
+                        # Just the AWB number — green dot comes from the success tag.
+                        return self._compact_text(awb or "—", 82)
+                    # All other AWB events suppressed from feed.
                     return self._compact_text(f"AWB {awb or '—'} updated", 82)
                 if stage == "EDM_CHECK":
-                    reason = self._short_reason(payload.get("reason", ""), 40)
                     if status == "CLEAN":
-                        return self._compact_text(f"EDM {awb or '—'} full clean", 82)
+                        return self._compact_text(f"AWB {awb or '—'} — Clean", 82)
                     if status == "PARTIAL-CLEAN":
-                        return self._compact_text(f"EDM {awb or '—'} partial clean", 82)
-                    if status == "CLEAN-UNCHECKED":
-                        return self._compact_text(f"EDM {awb or '—'} unchecked · {reason}", 82)
-                    return self._compact_text(f"EDM {awb or '—'} updated", 82)
+                        return self._compact_text(f"AWB {awb or '—'} — Mixed", 82)
+                    if status == "REJECTED":
+                        return self._compact_text(f"AWB {awb or '—'} — Duplicate", 82)
+                    # CLEAN-UNCHECKED and all other EDM events suppressed from feed.
+                    return self._compact_text(f"EDM {awb or '—'} unchecked", 82)
                 if stage == "BATCH":
                     action = self._short_reason(payload.get("action", payload.get("status", "event")), 40)
                     count = payload.get("output_count", payload.get("awb_count", ""))
@@ -3085,7 +3125,7 @@ class App(tk.Tk):
             self._stat_labels["hot_total"].config(
                 text=f"Processed: {stats['hot_total']}")
             self._stat_labels["hot_complete"].config(
-                text=f"Complete: {stats['hot_complete'] + self._perf_extra_complete}")
+                text=f"Complete: {stats['hot_complete']}")
             self._stat_labels["hot_review"].config(
                 text=f"Review: {stats['hot_review']}",
                 fg=CRIT if stats["hot_review"] > 0 else REVIEW)
@@ -3098,7 +3138,7 @@ class App(tk.Tk):
                 text=f"EDM Rej: {stats['edm_rejected']}",
                 fg=CRIT if stats["edm_rejected"] > 0 else self._default_fg)
             self._stat_labels["batches_built"].config(
-                text=f"Batches: {stats['batches_built'] + self._perf_extra_batches}")
+                text=f"Batches: {stats['batches_built']}")
             self._stat_labels["tiffs"].config(
                 text=f"TIFFs: {stats['tiffs_converted']}")
             self._stat_labels["batch_tiers"].config(
