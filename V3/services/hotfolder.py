@@ -256,7 +256,10 @@ def main() -> None:
                     try:
                         for fn in INBOX_DIR.iterdir():
                             if fn.suffix.lower() == ".pdf":
-                                handler._enqueue(str(fn))
+                                # Skip files already queued for third-pass —
+                                # re-enqueueing them causes fast→long→timeout loops.
+                                if str(fn) not in timeout_deferred_state:
+                                    handler._enqueue(str(fn))
                     except Exception as e:
                         log(f"Rescan warning: {e}")
                     last_rescan = now
@@ -277,7 +280,9 @@ def main() -> None:
                             allow_long_pass=False,
                         )
                         if result in ("DEFERRED", "DEFERRED_URGENT"):
-                            deferred_long_pass.append(str(path))
+                            # Don't re-add files already queued for third-pass
+                            if str(path) not in timeout_deferred_state:
+                                deferred_long_pass.append(str(path))
                     else:
                         process_pdf(
                             str(path), awb_set, by_prefix, by_suffix,
