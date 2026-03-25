@@ -1483,6 +1483,12 @@ def _record_outcome(
 
     _append_awb_logs(awb=awb, filename=filename, status=result)
 
+    # Emit a single plain-text summary line to stdout for the UI live feed.
+    _ui_labels = {"CLEAN": "Clean", "PARTIAL-CLEAN": "Mixed", "REJECTED": "Duplicate"}
+    _ui_label = _ui_labels.get(result)
+    if _ui_label and awb:
+        log.info("EDM-DONE %s %s", awb, _ui_label)
+
 
 def _process_partial_split(
     filepath: str,

@@ -825,15 +825,16 @@ class App(tk.Tk):
         left = tk.Frame(main, bg=APP_BG)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         left.grid_columnconfigure(0, weight=1)
-        left.grid_rowconfigure(3, weight=1)   # filler row keeps cards at top
+        left.grid_rowconfigure(1, weight=1)   # Live Activity expands
 
         # ── Operations Snapshot (folder count tiles) ──────────────────────────
         snap = _card(left)
         snap.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         _card_header(snap, "OPERATIONS SNAPSHOT")
 
-        snap_status_row = tk.Frame(snap, bg="#f7f9fc")
+        snap_status_row = tk.Frame(snap, bg="#f7f9fc", height=26)
         snap_status_row.pack(fill="x", padx=10, pady=(5, 1))
+        snap_status_row.pack_propagate(False)
         self.lbl_status_strip = tk.Label(
             snap_status_row,
             text="System stable  ·  Queue idle  ·  No review",
@@ -889,7 +890,7 @@ class App(tk.Tk):
             cnt.pack(anchor="center", pady=(6, 0))
 
             delta_lbl = tk.Label(
-                inner, text="",
+                inner, text=" ",
                 font=(FONT_SMALL[0], FONT_SMALL[1]),
                 fg=TEXT_MUTED, bg=PANEL_BG,
                 anchor="center",
@@ -940,156 +941,6 @@ class App(tk.Tk):
         self.lbl_pending = _count_tile(tiles_frame, 0, 6, "PENDING",
                                          lambda: self.open_folder(config.PENDING_PRINT_DIR))
 
-        # ── Live Summary ─────────────────────────────────────────────────────
-        summary_wrap = tk.Frame(left, bg=APP_BG)
-        summary_wrap.grid(row=1, column=0, sticky="ew", pady=(0, 6))
-        for _ci in range(3):
-            summary_wrap.grid_columnconfigure(_ci, weight=1)
-
-        def _summary_card(parent, col, title, accent_color):
-            card = _card(parent)
-            card.grid(row=0, column=col, sticky="nsew", padx=(0 if col == 0 else 3, 0 if col == 2 else 3))
-            _card_header(card, title)
-            body = tk.Frame(card, bg="#f7f9fc")
-            body.pack(fill="both", expand=True, padx=16, pady=15)
-            top_row = tk.Frame(body, bg="#f7f9fc")
-            top_row.pack(fill="x")
-            state = tk.Label(
-                top_row, text="WAITING",
-                font=(FONT_SMALL[0], 9, "bold"),
-                fg=TEXT_SEC, bg="#e8edf5", anchor="w",
-                padx=10, pady=4,
-            )
-            state.pack(side="left", anchor="w")
-            timing = tk.Label(
-                top_row, text="",
-                font=(FONT_SMALL[0], 7),
-                fg="#9aa5b7", bg="#f7f9fc", anchor="e",
-                padx=2, pady=2,
-            )
-            timing.pack(side="right", anchor="e")
-            primary_row = tk.Frame(body, bg="#f7f9fc")
-            primary_row.pack(fill="x", pady=(11, 8))
-            primary_prefix = tk.Label(
-                primary_row, text="",
-                font=(FONT_LABEL[0], 14, "bold"), fg=TEXT_FG, bg="#f7f9fc",
-                anchor="w",
-            )
-            primary_prefix.pack(side="left")
-            primary_value = tk.Label(
-                primary_row, text="—",
-                font=(FONT_LABEL[0], 14, "bold"), fg=TEXT_FG, bg="#f7f9fc",
-                anchor="w",
-            )
-            primary_value.pack(side="left")
-            primary_suffix = tk.Label(
-                primary_row, text="",
-                font=(FONT_LABEL[0], 14, "bold"), fg=TEXT_FG, bg="#f7f9fc",
-                anchor="w",
-            )
-            primary_suffix.pack(side="left")
-            line1 = tk.Label(body, text="—", font=FONT_SMALL, fg=TEXT_SEC, bg="#f7f9fc", anchor="w", justify="left")
-            line1.pack(fill="x", pady=1)
-            line2 = tk.Label(body, text="—", font=FONT_SMALL, fg=TEXT_SEC, bg="#f7f9fc", anchor="w", justify="left")
-            line2.pack(fill="x", pady=1)
-            line3 = tk.Label(body, text="—", font=FONT_SMALL, fg=TEXT_SEC, bg="#f7f9fc", anchor="w", justify="left")
-            line3.pack(fill="x", pady=1)
-            return card, state, timing, primary_row, primary_prefix, primary_value, primary_suffix, line1, line2, line3
-
-        (
-            self.match_card,
-            self.lbl_match_state,
-            self.lbl_match_timing,
-            self.match_primary_row,
-            self.lbl_match_primary_prefix,
-            self.lbl_match_primary_value,
-            self.lbl_match_primary_suffix,
-            self.lbl_match_line1,
-            self.lbl_match_line2,
-            self.lbl_match_line3,
-        ) = _summary_card(summary_wrap, 0, "MATCH MONITOR", INFO)
-        (
-            self.edm_dup_card,
-            self.lbl_edmdup_state,
-            self.lbl_edmdup_timing,
-            self.edmdup_primary_row,
-            self.lbl_edmdup_primary_prefix,
-            self.lbl_edmdup_primary_value,
-            self.lbl_edmdup_primary_suffix,
-            self.lbl_edmdup_line1,
-            self.lbl_edmdup_line2,
-            self.lbl_edmdup_line3,
-        ) = _summary_card(summary_wrap, 1, "EDM DUPLICATE CHECK", WARN)
-        (
-            self.batch_ready_card,
-            self.lbl_batchprep_state,
-            self.lbl_batchprep_timing,
-            self.batchprep_primary_row,
-            self.lbl_batchprep_primary_prefix,
-            self.lbl_batchprep_primary_value,
-            self.lbl_batchprep_primary_suffix,
-            self.lbl_batchprep_line1,
-            self.lbl_batchprep_line2,
-            self.lbl_batchprep_line3,
-        ) = _summary_card(summary_wrap, 2, "BATCH TYPES PREPARED", OK)
-        self.lbl_batchprep_timing.config(text="")
-
-        def _sync_summary_wrap(_e=None):
-            # Keep summary text inside cards on resize; prevents overflow/overlap.
-            wrap = max(140, summary_wrap.winfo_width() // 3 - 58)
-            for lbl in (
-                self.lbl_match_line1, self.lbl_match_line2, self.lbl_match_line3,
-                self.lbl_edmdup_line1, self.lbl_edmdup_line2, self.lbl_edmdup_line3,
-                self.lbl_batchprep_line1, self.lbl_batchprep_line2, self.lbl_batchprep_line3,
-            ):
-                try:
-                    lbl.config(wraplength=wrap)
-                except Exception:
-                    pass
-        summary_wrap.bind("<Configure>", _sync_summary_wrap)
-
-        # ── Performance Stats ─────────────────────────────────────────────────
-        perf_card = _card(left)
-        perf_card.grid(row=2, column=0, sticky="ew", pady=(0, 0))
-        _card_header(perf_card, "PERFORMANCE")
-
-        perf_body = tk.Frame(perf_card, bg=PANEL_BG)
-        perf_body.pack(fill="x", padx=12, pady=8)
-
-        left_stats  = tk.Frame(perf_body, bg=PANEL_BG)
-        left_stats.pack(side="left", fill="x", expand=True)
-        tk.Frame(perf_body, bg=_card_border, width=1).pack(side="left", fill="y", padx=8)
-        right_stats = tk.Frame(perf_body, bg=PANEL_BG)
-        right_stats.pack(side="left", fill="x", expand=True)
-
-        tk.Label(left_stats,  text="AWB PIPELINE", font=FONT_TITLE, fg=TEXT_SEC, bg=PANEL_BG).grid(row=0, column=0, sticky="w")
-        tk.Label(right_stats, text="BATCH / TIFF",  font=FONT_TITLE, fg=TEXT_SEC, bg=PANEL_BG).grid(row=0, column=0, sticky="w")
-
-        self._stat_labels = {}
-        defs_l = [
-            ("hot_total",    "Processed: 0",  TEXT_FG),
-            ("hot_complete", "Complete: 0",   OK),
-            ("hot_review",   "Review: 0",     REVIEW),
-            ("hot_failed",   "Failed: 0",     CRIT),
-        ]
-        defs_r = [
-            ("edm_clean",     "EDM Clean: 0", OK),
-            ("edm_rejected",  "EDM Rej: 0",   CRIT),
-            ("batches_built", "Batches: 0",   INFO),
-            ("tiffs",         "TIFFs: 0",     INFO),
-            ("batch_tiers",   "Tier S/M/W: 0/0/0", INFO),
-        ]
-        for i, (k, t, c) in enumerate(defs_l, start=1):
-            lbl = tk.Label(left_stats,  text=t, font=FONT_SMALL, fg=c, bg=PANEL_BG, anchor="w")
-            lbl.grid(row=i, column=0, sticky="w", pady=1)
-            self._stat_labels[k] = lbl
-        for i, (k, t, c) in enumerate(defs_r, start=1):
-            lbl = tk.Label(right_stats, text=t, font=FONT_SMALL, fg=c, bg=PANEL_BG, anchor="w")
-            lbl.grid(row=i, column=0, sticky="w", pady=1)
-            self._stat_labels[k] = lbl
-
-        # filler row so cards are pushed to the top
-        tk.Frame(left, bg=APP_BG).grid(row=3, column=0, sticky="nsew")
 
         # ── Right panel ───────────────────────────────────────────────────────
         right = tk.Frame(main, bg=APP_BG)
@@ -1121,8 +972,9 @@ class App(tk.Tk):
             font=FONT_SMALL, fg=TEXT_SEC, bg=PANEL_BG, anchor="w",
         )
         self.lbl_run_status.pack(fill="x", pady=(2, 0))
-        self.step_icon_row = tk.Frame(ov_body, bg=PANEL_BG)
+        self.step_icon_row = tk.Frame(ov_body, bg=PANEL_BG, height=24)
         self.step_icon_row.pack(fill="x", pady=(7, 0))
+        self.step_icon_row.pack_propagate(False)
         self._step_icons: dict[str, tuple[tk.Label, str]] = {}
         for _step_name, _active_color in [
             ("INBOX", "#2a5ca8"),
@@ -1149,10 +1001,122 @@ class App(tk.Tk):
         self.lbl_run_hint = tk.Label(
             ov_body, text=self._default_run_hint,
             font=FONT_SMALL, fg=TEXT_MUTED, bg=PANEL_BG, anchor="w",
+            height=2, justify="left",
         )
         self.lbl_run_hint.pack(fill="x", pady=(2, 0))
-        # ── Live Activity ─────────────────────────────────────────────────────
-        tl_card = _card(right)
+
+        # ── Performance (right panel, row 1) ──────────────────────────────────
+        perf_card = _card(right)
+        perf_card.grid(row=1, column=0, sticky="nsew")
+        perf_card.grid_columnconfigure(0, weight=1)
+        _card_header(perf_card, "PERFORMANCE")
+
+        perf_body = tk.Frame(perf_card, bg=PANEL_BG)
+        perf_body.pack(fill="both", expand=True, padx=14, pady=12)
+
+        # ── Big metric tiles (Processed / Complete / Review / Failed) ─────────
+        metric_row = tk.Frame(perf_body, bg=PANEL_BG)
+        metric_row.pack(fill="x", pady=(0, 12))
+        for _ci in range(4):
+            metric_row.columnconfigure(_ci, weight=1)
+
+        self._stat_labels = {}
+        metric_row.rowconfigure(0, minsize=70)
+
+        def _perf_tile(col, label, key, fg_color, tile_bg):
+            tile = tk.Frame(metric_row, bg=tile_bg, bd=0,
+                            highlightthickness=1, highlightbackground="#ccd7e8")
+            tile.grid(row=0, column=col, padx=(0 if col == 0 else 5, 0), sticky="nsew")
+            tile.grid_propagate(False)
+            tk.Label(tile, text=label, font=(FONT_SMALL[0], 7, "bold"),
+                     fg=TEXT_MUTED, bg=tile_bg).pack(anchor="center", pady=(10, 0))
+            val = tk.Label(tile, text="0", font=(FONT_COUNT[0], 22, "bold"),
+                           fg=fg_color, bg=tile_bg)
+            val.pack(anchor="center", pady=(3, 10))
+            self._stat_labels[key] = val
+
+        _perf_tile(0, "PROCESSED", "hot_total",    TEXT_FG,  "#f0f5fc")
+        _perf_tile(1, "COMPLETE",  "hot_complete", OK,       "#edfaf2")
+        _perf_tile(2, "REVIEW",    "hot_review",   REVIEW,   "#fff8ec")
+        _perf_tile(3, "FAILED",    "hot_failed",   CRIT,     "#fff2f2")
+
+        # ── Success rate bar ──────────────────────────────────────────────────
+        rate_frame = tk.Frame(perf_body, bg=PANEL_BG)
+        rate_frame.pack(fill="x", pady=(0, 12))
+
+        rate_hdr = tk.Frame(rate_frame, bg=PANEL_BG)
+        rate_hdr.pack(fill="x")
+        tk.Label(rate_hdr, text="SUCCESS RATE", font=(FONT_SMALL[0], 8, "bold"),
+                 fg=TEXT_MUTED, bg=PANEL_BG).pack(side="left")
+        self._perf_rate_lbl = tk.Label(rate_hdr, text="—",
+                                       font=(FONT_SMALL[0], 8), fg=TEXT_SEC, bg=PANEL_BG)
+        self._perf_rate_lbl.pack(side="right")
+
+        bar_bg_frame = tk.Frame(rate_frame, bg="#dce5f0", height=8)
+        bar_bg_frame.pack(fill="x", pady=(5, 0))
+        bar_bg_frame.pack_propagate(False)
+        self._perf_bar_fill = tk.Frame(bar_bg_frame, bg=OK, height=8)
+        self._perf_bar_fill.place(relx=0, rely=0, relwidth=0.0, relheight=1.0)
+
+        # ── EDM + Batch sub-panels ────────────────────────────────────────────
+        sub_row = tk.Frame(perf_body, bg=PANEL_BG)
+        sub_row.pack(fill="x")
+        sub_row.columnconfigure(0, weight=1)
+        sub_row.columnconfigure(1, weight=1)
+        sub_row.rowconfigure(0, minsize=90)
+
+        # EDM / Duplicates
+        edm_sub = tk.Frame(sub_row, bg="#f7f9fc", bd=0,
+                           highlightthickness=1, highlightbackground="#ccd7e8")
+        edm_sub.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        edm_sub.grid_propagate(False)
+        tk.Label(edm_sub, text="EDM / DUPLICATES",
+                 font=(FONT_SMALL[0], 7, "bold"), fg=TEXT_MUTED, bg="#f7f9fc").pack(
+                     anchor="w", padx=10, pady=(9, 2))
+        edm_top = tk.Frame(edm_sub, bg="#f7f9fc")
+        edm_top.pack(fill="x", padx=10)
+        edm_top.columnconfigure(0, weight=1)
+        edm_clean_n = tk.Label(edm_top, text="0",
+                               font=(FONT_COUNT[0], 20, "bold"), fg=OK, bg="#f7f9fc")
+        edm_clean_n.grid(row=0, column=0, sticky="w")
+        tk.Label(edm_top, text="clean", font=(FONT_SMALL[0], 8),
+                 fg=TEXT_MUTED, bg="#f7f9fc").grid(row=0, column=1, sticky="sw",
+                                                    padx=(3, 0), pady=(0, 3))
+        self._stat_labels["edm_clean"] = edm_clean_n
+        edm_rej_lbl = tk.Label(edm_sub, text="Rejected: 0",
+                               font=FONT_SMALL, fg=self._default_fg, bg="#f7f9fc", anchor="w")
+        edm_rej_lbl.pack(fill="x", padx=10, pady=(4, 9))
+        self._stat_labels["edm_rejected"] = edm_rej_lbl
+
+        # Batch / Output
+        batch_sub = tk.Frame(sub_row, bg="#f7f9fc", bd=0,
+                             highlightthickness=1, highlightbackground="#ccd7e8")
+        batch_sub.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+        batch_sub.grid_propagate(False)
+        tk.Label(batch_sub, text="BATCH / OUTPUT",
+                 font=(FONT_SMALL[0], 7, "bold"), fg=TEXT_MUTED, bg="#f7f9fc").pack(
+                     anchor="w", padx=10, pady=(9, 2))
+        batch_top = tk.Frame(batch_sub, bg="#f7f9fc")
+        batch_top.pack(fill="x", padx=10)
+        batch_top.columnconfigure(0, weight=1)
+        batch_n = tk.Label(batch_top, text="0",
+                           font=(FONT_COUNT[0], 20, "bold"), fg=INFO, bg="#f7f9fc")
+        batch_n.grid(row=0, column=0, sticky="w")
+        tk.Label(batch_top, text="batches", font=(FONT_SMALL[0], 8),
+                 fg=TEXT_MUTED, bg="#f7f9fc").grid(row=0, column=1, sticky="sw",
+                                                    padx=(3, 0), pady=(0, 3))
+        self._stat_labels["batches_built"] = batch_n
+        batch_tiff_lbl = tk.Label(batch_sub, text="TIFFs: 0",
+                                  font=FONT_SMALL, fg=INFO, bg="#f7f9fc", anchor="w")
+        batch_tiff_lbl.pack(fill="x", padx=10, pady=(4, 2))
+        self._stat_labels["tiffs"] = batch_tiff_lbl
+        batch_tier_lbl = tk.Label(batch_sub, text="Tier  S: 0  ·  M: 0  ·  W: 0",
+                                  font=FONT_SMALL, fg=TEXT_SEC, bg="#f7f9fc", anchor="w")
+        batch_tier_lbl.pack(fill="x", padx=10, pady=(0, 9))
+        self._stat_labels["batch_tiers"] = batch_tier_lbl
+
+        # ── Live Activity (left panel, row 1) ─────────────────────────────────
+        tl_card = _card(left)
         tl_card.grid(row=1, column=0, sticky="nsew")
         tl_card.grid_rowconfigure(1, weight=1)
         tl_card.grid_columnconfigure(0, weight=1)
@@ -1618,7 +1582,7 @@ class App(tk.Tk):
         delta_lbl.config(text=text, fg=fg)
         if text:
             try:
-                delta_lbl._clear_job = self.after(duration_ms, lambda: delta_lbl.config(text=""))
+                delta_lbl._clear_job = self.after(duration_ms, lambda: delta_lbl.config(text=" "))
             except Exception:
                 pass
 
@@ -1719,9 +1683,11 @@ class App(tk.Tk):
             (r"INFO\s+EXCEL:\s*Excel sheet", "Database sheet ready"),
             (r"INFO\s+LOGS:\s*Excel sheet", "Log sheet ready"),
             (r"\[TIMING\].*", ""),
-            # Raw hotfolder match line — suppress; JSON event shows the AWB number instead
-            (r"AWB MATCHED \([^)]+\):\s*\d+.*", ""),
-            # EDM verbose lines — all suppressed; JSON events show the clean result
+            # Raw hotfolder match line — extract just the 12-digit AWB number.
+            (r"AWB MATCHED \([^)]+\):\s*(\d{12}).*", r"\1"),
+            # EDM plain-text result line emitted by _record_outcome().
+            (r"^EDM-DONE (\d{12}) (Clean|Mixed|Duplicate)$", r"AWB \1 — \2"),
+            # EDM verbose lines — all suppressed.
             (r"^={3,}$", ""),
             (r"^File:\s+.+", ""),
             (r"^AWB:\s+.+", ""),
@@ -1753,51 +1719,17 @@ class App(tk.Tk):
         compact = " ".join(str(pretty_message or "").split())
         if not compact:
             return None
-        hide_patterns = (
-            # ── Verbose AWB pipeline lines (now silenced) ──────────────────
-            r"^AWB matched$",          # raw "AWB MATCHED ..." without number
-            r"^AWB .+ updated$",       # other AWB_HOTFOLDER fallback events
-            r"^AWB .+ needs review$",  # not shown in feed
-            r"^AWB .+ to processed$",  # routing noise
-            r"^Deep check running$",
-            r"^Queued for deep check$",
-            r"^AWB list loaded$",
-            r"^New file detected$",
-            r"^Two-pass mode active$",
-            r"^Deep-pass time budget set$",
-            # ── EDM events not surfaced in feed ────────────────────────────
-            r"^EDM .+ unchecked",      # CLEAN-UNCHECKED — not a clean result
-            r"^EDM .+ updated$",       # fallback EDM events
-            # ── Service start/stop and button-press noise ──────────────────
-            r"^AWB service start",
-            r"^AWB service stop",
-            r"^EDM checker start",
-            r"^EDM checker stop",
-            r"^Batch service start",
-            r"^EDM bypass",
-            r"^EDM checks",
-            r"^Two-pass mode active$",
-            r"^Deep-pass time budget",
-            # ── Generic noise ──────────────────────────────────────────────
-            r"^Batch prepared\b",
-            r"^AWB Pipeline V3\b",
-            r"^Workspace ready$",
-            r"^Protected files loaded$",
-            r"^Database sheet ready$",
-            r"^Log sheet ready$",
-            r"^System ready$",
-            r"^$",
-            r"^Rotation checked$",
-            r"^Checking next document$",
-            r"^Watching inbox$",
-            r"^Live folder watch running$",
-            r".*gone before processing.*",
-            r".*unexpected error on .* no such file or directory.*",
+        # Allowlist: only the two key user-facing events reach the feed.
+        # Everything else is captured in the audit log or surfaced via the
+        # hard-error bypass in log_append().
+        show_patterns = (
+            r"^\d{12}$",                                     # AWB match — just the number
+            r"^AWB \d{12} — (Clean|Mixed|Duplicate)$",      # EDM result
         )
-        for pattern in hide_patterns:
+        for pattern in show_patterns:
             if re.search(pattern, compact, flags=re.IGNORECASE):
-                return None
-        return compact
+                return compact
+        return None
 
     def _is_hard_error_event(self, raw_message: str, tag_name: str) -> bool:
         """Return True only for genuinely hard failures that deserve red/orange emphasis."""
@@ -2042,140 +1974,18 @@ class App(tk.Tk):
     def _update_match_summary(self, state: str = "WAITING", primary: str = "No active match",
                               line1: str = "Type: —", line2: str = "Confidence: —", line3: str = "Route: —",
                               timing_text: str | None = None, fg: str = TEXT_SEC):
-        if not hasattr(self, "lbl_match_state"):
-            return
-        state_changed = self.lbl_match_state.cget("text") != state
-        primary_changed = (
-            self.lbl_match_primary_prefix.cget("text"),
-            self.lbl_match_primary_value.cget("text"),
-            self.lbl_match_primary_suffix.cget("text"),
-        ) != self._split_summary_primary(primary)
-        self._style_summary_card(
-            self.lbl_match_state,
-            self.lbl_match_primary_value,
-            (self.lbl_match_line1, self.lbl_match_line2, self.lbl_match_line3),
-            fg,
-        )
-        self.lbl_match_state.config(text=state, fg=fg)
-        self._set_summary_primary_parts(
-            self.lbl_match_primary_prefix,
-            self.lbl_match_primary_value,
-            self.lbl_match_primary_suffix,
-            primary,
-            fg,
-        )
-        self.lbl_match_line1.config(text=self._compact_text(line1, 54))
-        self.lbl_match_line2.config(text=self._compact_text(line2, 54))
-        self.lbl_match_line3.config(text=self._compact_text(line3, 54))
-        if timing_text is not None:
-            self.lbl_match_timing.config(text=timing_text)
-        if state_changed or primary_changed:
-            tone = "positive" if fg == OK else ("negative" if fg in {WARN, CRIT, REVIEW} else "info")
-            self._flash_summary_panel(
-                self.lbl_match_state,
-                [
-                    self.match_primary_row,
-                    self.lbl_match_primary_prefix,
-                    self.lbl_match_primary_value,
-                    self.lbl_match_primary_suffix,
-                    self.lbl_match_line1,
-                    self.lbl_match_line2,
-                    self.lbl_match_line3,
-                ],
-                tone,
-            )
+        return  # panel removed
 
     def _update_edm_duplicate_summary(self, state: str = "IDLE", primary: str = "No EDM result",
                                       line1: str = "Full clean: 0", line2: str = "Partial clean: 0",
                                       line3: str = "Clean pages: 0  ·  Duplicate pages: 0",
                                       timing_text: str | None = None, fg: str = TEXT_SEC):
-        if not hasattr(self, "lbl_edmdup_state"):
-            return
-        state_changed = self.lbl_edmdup_state.cget("text") != state
-        primary_changed = (
-            self.lbl_edmdup_primary_prefix.cget("text"),
-            self.lbl_edmdup_primary_value.cget("text"),
-            self.lbl_edmdup_primary_suffix.cget("text"),
-        ) != self._split_summary_primary(primary)
-        self._style_summary_card(
-            self.lbl_edmdup_state,
-            self.lbl_edmdup_primary_value,
-            (self.lbl_edmdup_line1, self.lbl_edmdup_line2, self.lbl_edmdup_line3),
-            fg,
-        )
-        self.lbl_edmdup_state.config(text=state, fg=fg)
-        self._set_summary_primary_parts(
-            self.lbl_edmdup_primary_prefix,
-            self.lbl_edmdup_primary_value,
-            self.lbl_edmdup_primary_suffix,
-            primary,
-            fg,
-        )
-        self.lbl_edmdup_line1.config(text=self._compact_text(line1, 54))
-        self.lbl_edmdup_line2.config(text=self._compact_text(line2, 54))
-        self.lbl_edmdup_line3.config(text=self._compact_text(line3, 54))
-        if timing_text is not None:
-            self.lbl_edmdup_timing.config(text=timing_text)
-        if state_changed or primary_changed:
-            tone = "positive" if fg == OK else ("negative" if fg in {WARN, CRIT, REVIEW} else "info")
-            self._flash_summary_panel(
-                self.lbl_edmdup_state,
-                [
-                    self.edmdup_primary_row,
-                    self.lbl_edmdup_primary_prefix,
-                    self.lbl_edmdup_primary_value,
-                    self.lbl_edmdup_primary_suffix,
-                    self.lbl_edmdup_line1,
-                    self.lbl_edmdup_line2,
-                    self.lbl_edmdup_line3,
-                ],
-                tone,
-            )
+        return  # panel removed
 
     def _update_batch_prep_summary(self, state: str = "IDLE", primary: str = "No batch output",
                                    line1: str = "PDF stacks: 0", line2: str = "TIFF prepared: 0",
                                    line3: str = "Pending print: 0", fg: str = TEXT_SEC):
-        if not hasattr(self, "lbl_batchprep_state"):
-            return
-        state_changed = self.lbl_batchprep_state.cget("text") != state
-        primary_changed = (
-            self.lbl_batchprep_primary_prefix.cget("text"),
-            self.lbl_batchprep_primary_value.cget("text"),
-            self.lbl_batchprep_primary_suffix.cget("text"),
-        ) != self._split_summary_primary(primary)
-        self._style_summary_card(
-            self.lbl_batchprep_state,
-            self.lbl_batchprep_primary_value,
-            (self.lbl_batchprep_line1, self.lbl_batchprep_line2, self.lbl_batchprep_line3),
-            fg,
-        )
-        self.lbl_batchprep_state.config(text=state, fg=fg)
-        self._set_summary_primary_parts(
-            self.lbl_batchprep_primary_prefix,
-            self.lbl_batchprep_primary_value,
-            self.lbl_batchprep_primary_suffix,
-            primary,
-            fg,
-        )
-        self.lbl_batchprep_line1.config(text=self._compact_text(line1, 54))
-        self.lbl_batchprep_line2.config(text=self._compact_text(line2, 54))
-        self.lbl_batchprep_line3.config(text=self._compact_text(line3, 54))
-        self.lbl_batchprep_timing.config(text="")
-        if state_changed or primary_changed:
-            tone = "positive" if fg == OK else ("negative" if fg in {WARN, CRIT, REVIEW} else "info")
-            self._flash_summary_panel(
-                self.lbl_batchprep_state,
-                [
-                    self.batchprep_primary_row,
-                    self.lbl_batchprep_primary_prefix,
-                    self.lbl_batchprep_primary_value,
-                    self.lbl_batchprep_primary_suffix,
-                    self.lbl_batchprep_line1,
-                    self.lbl_batchprep_line2,
-                    self.lbl_batchprep_line3,
-                ],
-                tone,
-            )
+        return  # panel removed
 
     def _infer_match_confidence(self, method: str) -> str:
         m = str(method or "").upper()
@@ -2284,6 +2094,7 @@ class App(tk.Tk):
         self._refresh_stats()
 
     def _refresh_batch_candidate_summary(self, use_placeholder: bool = False):
+        return  # panel removed
         if not hasattr(self, "lbl_batchprep_state"):
             return
         state = self.lbl_batchprep_state.cget("text")
@@ -3122,33 +2933,46 @@ class App(tk.Tk):
         def _apply(stats):
             if not stats:
                 return
-            self._stat_labels["hot_total"].config(
-                text=f"Processed: {stats['hot_total']}")
-            self._stat_labels["hot_complete"].config(
-                text=f"Complete: {stats['hot_complete']}")
+            total    = int(stats["hot_total"]    or 0)
+            complete = int(stats["hot_complete"] or 0)
+            review   = int(stats["hot_review"]   or 0)
+            failed   = int(stats["hot_failed"]   or 0)
+            self._stat_labels["hot_total"].config(text=str(total))
+            self._stat_labels["hot_complete"].config(text=str(complete))
             self._stat_labels["hot_review"].config(
-                text=f"Review: {stats['hot_review']}",
-                fg=CRIT if stats["hot_review"] > 0 else REVIEW)
+                text=str(review),
+                fg=CRIT if review > 0 else REVIEW)
             self._stat_labels["hot_failed"].config(
-                text=f"Failed: {stats['hot_failed']}",
-                fg=CRIT if stats["hot_failed"] > 0 else self._default_fg)
-            self._stat_labels["edm_clean"].config(
-                text=f"EDM Clean: {stats['edm_clean'] + stats['edm_partial']}")
+                text=str(failed),
+                fg=CRIT if failed > 0 else self._default_fg)
+            # Progress bar — rate = matched / (matched + needs_review + failed).
+            # Denominator counts only files with a definitive outcome so that
+            # files still in the deferred queue don't deflate the percentage.
+            resolved = complete + review + failed
+            rate = complete / max(1, resolved)
+            try:
+                self._perf_bar_fill.place(relwidth=rate)
+                self._perf_rate_lbl.config(
+                    text=f"{rate * 100:.1f}%  ({complete} / {resolved})")
+                bar_color = OK if rate >= 0.9 else (REVIEW if rate >= 0.7 else CRIT)
+                self._perf_bar_fill.config(bg=bar_color)
+            except Exception:
+                pass
+            edm_total = int(stats["edm_clean"] or 0) + int(stats["edm_partial"] or 0)
+            edm_rej   = int(stats["edm_rejected"] or 0)
+            self._stat_labels["edm_clean"].config(text=str(edm_total))
             self._stat_labels["edm_rejected"].config(
-                text=f"EDM Rej: {stats['edm_rejected']}",
-                fg=CRIT if stats["edm_rejected"] > 0 else self._default_fg)
+                text=f"Rejected: {edm_rej}",
+                fg=CRIT if edm_rej > 0 else self._default_fg)
             self._stat_labels["batches_built"].config(
-                text=f"Batches: {stats['batches_built']}")
+                text=str(int(stats["batches_built"] or 0)))
             self._stat_labels["tiffs"].config(
-                text=f"TIFFs: {stats['tiffs_converted']}")
+                text=f"TIFFs: {int(stats['tiffs_converted'] or 0)}")
+            ts = int(stats.get("batch_tier_strong", 0) or 0)
+            tm = int(stats.get("batch_tier_mix",    0) or 0)
+            tw = int(stats.get("batch_tier_weak",   0) or 0)
             self._stat_labels["batch_tiers"].config(
-                text=(
-                    f"Tier S/M/W: "
-                    f"{int(stats.get('batch_tier_strong', 0) or 0)}/"
-                    f"{int(stats.get('batch_tier_mix', 0) or 0)}/"
-                    f"{int(stats.get('batch_tier_weak', 0) or 0)}"
-                )
-            )
+                text=f"Tier  S: {ts}  ·  M: {tm}  ·  W: {tw}")
             session_batches = max(0, int(stats.get("batches_built", 0) or 0) - self._session_stats_baseline["batches_built"])
             session_tiffs = max(0, int(stats.get("tiffs_converted", 0) or 0) - self._session_stats_baseline["tiffs_converted"])
             self._batch_tier_totals["strong"] = max(0, int(stats.get("batch_tier_strong", 0) or 0) - self._session_stats_baseline["batch_tier_strong"])
@@ -3514,7 +3338,6 @@ class App(tk.Tk):
     def set_status(self, msg: str):
         self.status_var.set(msg)
         self._update_run_overview()
-        self.update_idletasks()
 
     def log_append(self, msg: str):
         if getattr(self, "_is_closing", False):
@@ -3551,7 +3374,13 @@ class App(tk.Tk):
             base_bg = "#ffffff" if (len(self._log_rows) % 2 == 0) else "#f4f8fd"
             fg, _bg = self._log_tag_styles.get(tag_name, (TEXT_FG, None))
             pretty_message = self._format_timeline_message(message, tag_name)
-            visible_message = self._frontend_visible_message(pretty_message)
+            hard_error = self._is_hard_error_event(message, tag_name)
+            # Hard failures (crashes, permission errors, etc.) always surface.
+            # Everything else goes through the strict two-pattern allowlist.
+            if hard_error:
+                visible_message = pretty_message
+            else:
+                visible_message = self._frontend_visible_message(pretty_message)
             stage_key = self._classify_activity_stage(message, payload, pretty_message)
             stage_colors = {
                 "AWB": "#4a33a2",
@@ -3560,14 +3389,6 @@ class App(tk.Tk):
                 "SYSTEM": "#7b8597",
             }
             stage_color = stage_colors.get(stage_key, "#7b8597")
-            edm_state_row = visible_message in {"EDM bypass active", "EDM checks enabled"}
-            if edm_state_row:
-                # Show EDM state only at startup or explicit toggle actions, never as repeated runtime chatter.
-                state_event = bool(re.search(r"EDM fallback:|EDM fallback set to", message, flags=re.IGNORECASE))
-                if not state_event or self._last_edm_frontend_state == visible_message:
-                    visible_message = None
-                else:
-                    self._last_edm_frontend_state = visible_message
             badge_bg = {
                 "error":    CRIT,
                 "warn":     WARN,
@@ -3595,10 +3416,6 @@ class App(tk.Tk):
             row = None
             dot = None
             msg_lbl = None
-            # For front-end feed: only surface hard failures from warn/error channels.
-            if tag_name in {"error", "warn", "review", "rejected"} and not hard_error:
-                visible_message = None
-
             if visible_message is not None:
                 if self._last_activity_stage is not None and stage_key != self._last_activity_stage:
                     tk.Frame(self.log_feed_inner, bg="#e8eef7", height=1).pack(fill="x", padx=6, pady=(3, 2))
