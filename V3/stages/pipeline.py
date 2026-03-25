@@ -187,6 +187,7 @@ def rotation_probe_best(
     img_lowdpi,
     return_scores: bool = False,
     preferred_angles=None,
+    max_probe_seconds: Optional[float] = None,
 ):
     """Raw-rotate-first probe with keyword scoring.
 
@@ -198,12 +199,23 @@ def rotation_probe_best(
     probe.  Use only when a strong external hint already narrows the likely
     angle.  Missing angles are filled with score=0 so downstream logic stays
     consistent.
+
+    *max_probe_seconds*: hard time cap for the entire probe. On slow/large
+    documents each Tesseract call can take 30+ seconds; capping prevents
+    multi-minute hangs. If the budget is exceeded mid-probe the best angle
+    seen so far is returned using digit scores only.
     """
     angles = tuple(preferred_angles) if preferred_angles else ALLOWED_ROTATION_ANGLES
     digit_scores: Dict[int, int] = {}
     probe_texts: Dict[int, Tuple[str, str]] = {}
+    _probe_t0 = time.perf_counter()
+    _budget_hit = False
 
     for rot in angles:
+        if max_probe_seconds and (time.perf_counter() - _probe_t0) >= max_probe_seconds:
+            log(f"[ROTATION-PROBE] Budget {max_probe_seconds:.0f}s reached after {rot}° — using best seen so far")
+            _budget_hit = True
+            break
         rimg = img_lowdpi.rotate(rot, expand=True) if rot else img_lowdpi
         t_digits = ocr_digits_only(preprocess(rimg, thr=175, invert=False), psm=6)
         digit_scores[rot] = digit_score(t_digits)
@@ -229,8 +241,24 @@ def rotation_probe_best(
             return 0, {k: float(v) for k, v in digit_scores.items()}, probe_texts
         return 0
 
+    # If budget was hit during phase 1, skip phase 2 entirely and return
+    # best angle from digit scores only.
+    if _budget_hit:
+        best_rot = max(digit_scores, key=lambda r: digit_scores[r])
+        if best_rot != 0 and (digit_scores[best_rot] - digit_scores.get(0, 0)) < ROTATION_PROBE_MIN_FLIP_MARGIN:
+            best_rot = 0
+        if best_rot not in ALLOWED_ROTATION_ANGLES:
+            best_rot = 0
+        float_scores = {k: float(v) for k, v in digit_scores.items()}
+        if return_scores:
+            return best_rot, float_scores, probe_texts
+        return best_rot
+
     scores: Dict[int, float] = {}
     for rot in angles:
+        if max_probe_seconds and (time.perf_counter() - _probe_t0) >= max_probe_seconds:
+            log(f"[ROTATION-PROBE] Budget {max_probe_seconds:.0f}s reached in phase-2 — skipping remaining angles")
+            break
         rimg = img_lowdpi.rotate(rot, expand=True) if rot else img_lowdpi
         t_text = ocr_text_general(preprocess_for_text(rimg, invert=False), psm=6)
         tu = (t_text or "").upper()
@@ -240,10 +268,10 @@ def rotation_probe_best(
         coherent = sum(1 for w in re.findall(r"[A-Za-z]{4,}", t_text or "") if w.isalpha())
         scores[rot] = digit_scores[rot] + (kw_hits * 120) + (coherent * 2)
 
-    # Fill scores for unprobed angles
+    # Fill scores for unprobed angles (use digit score as fallback)
     for _fill_rot in ALLOWED_ROTATION_ANGLES:
         if _fill_rot not in scores:
-            scores[_fill_rot] = 0
+            scores[_fill_rot] = float(digit_scores.get(_fill_rot, 0))
 
     best_rot = max(scores, key=lambda r: scores[r])
     if best_rot != 0 and (scores[best_rot] - scores.get(0, 0)) < ROTATION_PROBE_MIN_FLIP_MARGIN:
@@ -334,6 +362,7 @@ def process_pdf(
     _fastlane_rotation_probe_margin: float = 0.0
     _match_terminal: bool = False
     _matched_awb: Optional[str] = None
+    _table_pass_ran: bool = False  # one-shot guard; table runs at most once
 
     # ── Resume from a prior timeout ─────────────────────────────────────────
     _proceed_to_route = resume_state is not None
@@ -727,6 +756,33 @@ def process_pdf(
                 f"{len(running_standard)} std candidates accumulated"
             )
             raise _TimeoutDeferred()
+
+    def _build_timeout_state() -> dict:
+        """Capture all accumulated pipeline state for TIMEOUT_DEFERRED.
+
+        Used by both the _TimeoutDeferred exception handler (Stage 4) and the
+        explicit post-Stage-3.1 timeout gate, so the resume data is identical
+        regardless of which path triggers the deferral.
+        """
+        return {
+            "probe_scores":         dict(probe_scores),
+            "probe_texts":          {k: (v[0], v[1] if len(v) > 1 else "")
+                                     for k, v in probe_texts.items()},
+            "base_angle":           base_angle,
+            "_angle_certainty":     _angle_certainty,
+            "_rotation_hint":       _rotation_hint,
+            "_is_image_only":       _is_image_only,
+            "running_high":         list(running_high),
+            "running_standard":     list(running_standard),
+            "candidate_stage_hits": {k: list(v) for k, v in candidate_stage_hits.items()},
+            "candidate_confidence": dict(candidate_confidence),
+            "all_tried":            list(all_tried),
+            "quarantine":           {k: list(v) for k, v in quarantine.items()},
+            "ocr_cache":            [
+                [list(k), v] for k, v in ocr_cache.items() if isinstance(v, str)
+            ],
+            "timings":              dict(timings),
+        }
 
     def _get_fastlane_certain_rotation_signal() -> Tuple[Optional[int], float]:
         """Return cached (angle, margin) for a CERTAIN non-zero rotation signal.
@@ -1192,16 +1248,25 @@ def process_pdf(
         elapsed = time.perf_counter() - _fastlane_ocr_budget_start
         if elapsed <= budget_seconds:
             return "none"
+        # Always try the CERTAIN-rotation rescue — its margin gate is already
+        # computed and it returns False instantly when margin < threshold.
         if _run_fastlane_certain_rotation_rescue_lite(reason_tag=f"Budget-{stage_name}"):
             return "matched"
-        if _run_fastlane_quick_rotated_psm6(reason_tag=f"Budget-{stage_name}"):
-            return "matched"
-        # Try one strict low-cost probe before deferring.
-        # This catches rotated/easy cases early and avoids long-pass churn.
-        if _run_fast_probe_lite_strict(reason_tag=f"Budget-{stage_name}"):
-            return "matched"
-        if _run_fastlane_single_rotated_pass_before_defer(reason_tag=f"Budget-{stage_name}"):
-            return "matched"
+        # If the very first OCR call blew past the budget by more than 5s, the
+        # remaining rescue attempts would also be slow (same file, same Tesseract
+        # cost). Bail immediately rather than burning another 40-80s on rescues.
+        if elapsed <= budget_seconds + 5.0:
+            if _run_fastlane_quick_rotated_psm6(reason_tag=f"Budget-{stage_name}"):
+                return "matched"
+            if _run_fast_probe_lite_strict(reason_tag=f"Budget-{stage_name}"):
+                return "matched"
+            if _run_fastlane_single_rotated_pass_before_defer(reason_tag=f"Budget-{stage_name}"):
+                return "matched"
+        else:
+            log(
+                f"[FAST-LANE] Budget far exceeded ({elapsed:.1f}s >> {budget_seconds:.1f}s) "
+                f"— skipping rescue chain, deferring immediately: {name}"
+            )
         log(
             f"[FAST-LANE] Urgent defer due to OCR budget "
             f"({elapsed:.1f}s > {budget_seconds:.1f}s) at {stage_name}: {name}"
@@ -1263,9 +1328,6 @@ def process_pdf(
                 return True
 
             high_set, std_set = extract_tiered_candidates(txt, awb_set)
-            # Always merge so Stage 2/3 can use these candidates
-            merge_stage_candidates(high_set, std_set, f"FastEarlyHint-A{_rotation_hint}-PSM{psm}")
-            snapshot(f"FastEarlyHint-A{_rotation_hint}-PSM{psm}", high_set | std_set)
 
             high_db = sorted(high_set & awb_set)
             if len(high_db) == 1:
@@ -1518,11 +1580,17 @@ def process_pdf(
                 _scan_profile_image_only = False
 
         # Check 1: PDF metadata rotation
+        # PyMuPDF auto-applies page rotation during rendering, so the rendered
+        # image is already upright when page.rotation != 0.  We record this so
+        # Stage 3.1 can skip the expensive probe for these documents.
+        _pdf_meta_rotation: int = 0
         try:
             _page_meta_rot = get_page().rotation
             if _page_meta_rot in (90, 180, 270):
-                _rotation_hint = _page_meta_rot
-                log(f"[ANGLE-DETECT] PDF metadata rotation={_page_meta_rot}°")
+                _pdf_meta_rotation = _page_meta_rot
+                # Do NOT set _rotation_hint — the rendered image is already
+                # upright; hinting would cause a redundant rotated OCR pass.
+                log(f"[ANGLE-DETECT] PDF metadata rotation={_page_meta_rot}° (PyMuPDF auto-corrected — rendered image is upright)")
         except Exception:
             pass
 
@@ -1583,54 +1651,7 @@ def process_pdf(
         if (not allow_long_pass) and _scan_profile_image_only:
             _fastlane_ocr_budget_start = main_start
 
-        # Fast-lane: if rotation hint is set, run Stage 2 at the hinted angle
-        # FIRST using full Stage 2 logic (clean gate + exact priority).
-        # This lets clearly rotated docs exit at the earliest possible point
-        # without burning time on useless 0° OCR.
-        if (
-            (not allow_long_pass)
-            and _scan_profile_image_only
-            and _rotation_hint in (90, 180, 270)
-        ):
-            for _psm_r in OCR_MAIN_PSMS:
-                _budget_exit = _return_on_budget_guard(f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}-pre")
-                if _budget_exit:
-                    return _budget_exit
-                txt_r = get_ocr_digits(DPI_MAIN, _rotation_hint, 175, False, _psm_r)
-                awb_400_r = extract_awb_from_400_pattern(txt_r)
-                if awb_400_r:
-                    timings["ocr_main_ms"] = round((time.perf_counter() - main_start) * 1000, 1)
-                    complete_match(awb_400_r, f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}-400",
-                                   "Matched by OCR-main rotated 400 pattern")
-                    return "MATCHED"
-                cr_r = run_clean_priority_gate(txt_r, f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}")
-                if cr_r["status"] == "matched":
-                    timings["ocr_main_ms"] = round((time.perf_counter() - main_start) * 1000, 1)
-                    complete_match(cr_r["awb"], f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}-{cr_r['method']}",
-                                   "Matched exact clean in OCR-main rotated")
-                    return "MATCHED"
-                if cr_r["status"] == "tie":
-                    timings["ocr_main_ms"] = round((time.perf_counter() - main_start) * 1000, 1)
-                    send_review(f"Ambiguous OCR-main Rot{_rotation_hint} PSM{_psm_r} clean tie: {cr_r.get('ties', [])[:8]}",
-                                f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}-{cr_r['method']}")
-                    return "NEEDS_REVIEW"
-                hm_r, sm_r = extract_tiered_candidates(txt_r, awb_set)
-                merge_stage_candidates(hm_r, sm_r, f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}")
-                snapshot(f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}", hm_r | sm_r)
-                res_r = run_exact_priority()
-                if res_r["status"] == "matched":
-                    timings["ocr_main_ms"] = round((time.perf_counter() - main_start) * 1000, 1)
-                    complete_match(res_r["awb"], f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}-{res_r['method']}",
-                                   "Matched exact in OCR-main rotated")
-                    return "MATCHED"
-                if res_r["status"] == "tie":
-                    timings["ocr_main_ms"] = round((time.perf_counter() - main_start) * 1000, 1)
-                    send_review(f"Ambiguous OCR-main Rot{_rotation_hint} PSM{_psm_r} exact tie: {res_r.get('ties', [])[:8]}",
-                                f"OCR-Main-Rot{_rotation_hint}-PSM{_psm_r}-{res_r['method']}")
-                    return "NEEDS_REVIEW"
-            log(f"[FAST-LANE] Rot{_rotation_hint}° Stage-2 pre-pass no match — falling to 0°: {name}")
-
-        _ocr_angle = 0  # Stage 2/3 fallback always at 0°
+        _ocr_angle = 0  # Stage 2/3 always at 0°
 
         for _psm in OCR_MAIN_PSMS:
             _budget_exit = _return_on_budget_guard(f"OCR-Main-PSM{_psm}-pre")
@@ -1677,11 +1698,6 @@ def process_pdf(
                     f"OCR-Main-PSM{_psm}-{res['method']}",
                 )
                 return "NEEDS_REVIEW"
-            # Skip PSM11 at 0° if rotation hint set and PSM6 at 0° found nothing —
-            # the correct angle was already tried in the rotated pre-pass above.
-            if _psm == 6 and _rotation_hint in (90, 180, 270) and not (hm | sm) and not allow_long_pass:
-                log(f"[FAST] Skipping OCR-Main PSM11 at 0° — rotated hint={_rotation_hint}°, PSM6 empty: {name}")
-                break
             # Skip PSM11 if PSM6 found nothing and earlier stages have quality candidates
             if _psm == 6 and _has_quality_candidates() and not (hm | sm):
                 log("[FAST] Skipping OCR-Main PSM11 — PSM6 empty, quality candidates already present")
@@ -1906,39 +1922,47 @@ def process_pdf(
         # =================================================================
         # STAGE 3.1 — ROTATION PROBE
         # =================================================================
-        probe_img = get_image(ROTATION_PROBE_DPI, 0)
-        # For image-only documents in long-pass where pre-checks strongly
-        # indicated rotation, narrow the probe to 0 deg + hint angle only.
-        _probe_angles = ALLOWED_ROTATION_ANGLES
-        if (
-            allow_long_pass
-            and _is_image_only
-            and _rotation_hint in (90, 180, 270)
-        ):
-            _probe_angles = (0, _rotation_hint)
-            log(f"[ROTATION-PROBE] Narrowed probe to {_probe_angles} (image-only + hint={_rotation_hint}°)")
-        _mk5      = frozenset(_probe_angles)
-        _full_key = frozenset(ALLOWED_ROTATION_ANGLES)
-        if _mk5 in _rotation_probe_memo:
-            base_angle, probe_scores, probe_texts = _rotation_probe_memo[_mk5]
-        elif len(_probe_angles) < len(ALLOWED_ROTATION_ANGLES) and _full_key in _rotation_probe_memo:
-            # Derive subset result from the cached full-set probe — zero extra Tesseract calls.
-            # All four angles were already OCR'd; scores are deterministic for the same image.
-            _cb, _cs, _ct = _rotation_probe_memo[_full_key]
-            _sub_scores = {a: (_cs.get(a, 0.0) if a in _probe_angles else 0.0)
-                           for a in ALLOWED_ROTATION_ANGLES}
-            _sub_texts  = {a: (_ct.get(a, ("", "")) if a in _probe_angles else ("", ""))
-                           for a in ALLOWED_ROTATION_ANGLES}
-            _sub_best   = max(_sub_scores, key=lambda r: _sub_scores[r])
-            if _sub_best != 0 and (_sub_scores[_sub_best] - _sub_scores.get(0, 0.0)) < ROTATION_PROBE_MIN_FLIP_MARGIN:
-                _sub_best = 0
-            base_angle, probe_scores, probe_texts = _sub_best, _sub_scores, _sub_texts
-            _rotation_probe_memo[_mk5] = (base_angle, probe_scores, probe_texts)
+        # Skip the probe entirely when the PDF already carries rotation metadata:
+        # PyMuPDF applies that rotation during rendering so the image is upright.
+        if _pdf_meta_rotation in (90, 180, 270):
+            base_angle = 0
+            probe_scores = {0: 999.0, 90: 0.0, 180: 0.0, 270: 0.0}
+            probe_texts  = {a: ("", "") for a in ALLOWED_ROTATION_ANGLES}
+            log(f"[ROTATION-PROBE] Skipped — PDF metadata rotation={_pdf_meta_rotation}° already applied by renderer; treating as upright")
         else:
-            base_angle, probe_scores, probe_texts = rotation_probe_best(
-                probe_img, return_scores=True, preferred_angles=_probe_angles
-            )
-            _rotation_probe_memo[_mk5] = (base_angle, probe_scores, probe_texts)
+            probe_img = get_image(ROTATION_PROBE_DPI, 0)
+            # For image-only documents in long-pass where pre-checks strongly
+            # indicated rotation, narrow the probe to 0 deg + hint angle only.
+            _probe_angles = ALLOWED_ROTATION_ANGLES
+            if (
+                allow_long_pass
+                and _is_image_only
+                and _rotation_hint in (90, 180, 270)
+            ):
+                _probe_angles = (0, _rotation_hint)
+                log(f"[ROTATION-PROBE] Narrowed probe to {_probe_angles} (image-only + hint={_rotation_hint}°)")
+            _mk5      = frozenset(_probe_angles)
+            _full_key = frozenset(ALLOWED_ROTATION_ANGLES)
+            if _mk5 in _rotation_probe_memo:
+                base_angle, probe_scores, probe_texts = _rotation_probe_memo[_mk5]
+            elif len(_probe_angles) < len(ALLOWED_ROTATION_ANGLES) and _full_key in _rotation_probe_memo:
+                # Derive subset result from the cached full-set probe — zero extra Tesseract calls.
+                _cb, _cs, _ct = _rotation_probe_memo[_full_key]
+                _sub_scores = {a: (_cs.get(a, 0.0) if a in _probe_angles else 0.0)
+                               for a in ALLOWED_ROTATION_ANGLES}
+                _sub_texts  = {a: (_ct.get(a, ("", "")) if a in _probe_angles else ("", ""))
+                               for a in ALLOWED_ROTATION_ANGLES}
+                _sub_best   = max(_sub_scores, key=lambda r: _sub_scores[r])
+                if _sub_best != 0 and (_sub_scores[_sub_best] - _sub_scores.get(0, 0.0)) < ROTATION_PROBE_MIN_FLIP_MARGIN:
+                    _sub_best = 0
+                base_angle, probe_scores, probe_texts = _sub_best, _sub_scores, _sub_texts
+                _rotation_probe_memo[_mk5] = (base_angle, probe_scores, probe_texts)
+            else:
+                base_angle, probe_scores, probe_texts = rotation_probe_best(
+                    probe_img, return_scores=True, preferred_angles=_probe_angles,
+                    max_probe_seconds=30.0,
+                )
+                _rotation_probe_memo[_mk5] = (base_angle, probe_scores, probe_texts)
 
         if base_angle not in ALLOWED_ROTATION_ANGLES:
             base_angle = 0
@@ -1957,6 +1981,24 @@ def process_pdf(
             log(f"[ROTATION-PROBE] Base angle {base_angle}° selected | scores={score_view}")
         else:
             log(f"[ROTATION-PROBE] No rotation needed (0deg) | scores={score_view}")
+
+        # ── Post-Stage-3.1 timeout gate ───────────────────────────────────
+        # Check here — after the probe — so the captured resume state carries
+        # the correct base_angle and probe_scores. The third-pass resume skips
+        # Stage 3.1 entirely (inside `if not _proceed_to_route:`) and jumps
+        # directly to POST-PROBE → route execution with the rotation signal.
+        if timeout_seconds and (time.perf_counter() - start_ts) > timeout_seconds:
+            log(
+                f"[TIMEOUT] {name} exceeded {timeout_seconds:.0f}s budget after Stage 3.1 — "
+                f"deferring to third-pass with probe captured "
+                f"(base_angle={base_angle}°, {len(running_high)} high / "
+                f"{len(running_standard)} std)"
+            )
+            _td_state = _build_timeout_state()
+            if _state_out is not None:
+                _state_out.update(_td_state)
+            close_pdf()
+            return "TIMEOUT_DEFERRED"
 
     # =====================================================================
     # POST-PROBE: available on both fresh and resume paths
@@ -2157,6 +2199,10 @@ def process_pdf(
 
     # ── Stage 5 — Table line removal ────────────────────────────────────────
     def _run_table_pass():
+        nonlocal _table_pass_ran
+        if _table_pass_ran:
+            return False  # already ran this pass once; skip re-run
+        _table_pass_ran = True
         tbl_start = time.perf_counter()
         tbl_img = remove_table_lines_image(get_image(DPI_STRONG, base_angle))
         if tbl_img is None:
@@ -2251,6 +2297,58 @@ def process_pdf(
             log(f"[ROTATION] Pre-angle hint {_rotation_hint}° moved to front of rotation order")
 
         for rot in rotation_order:
+            # ── Probe-text pre-check (zero extra OCR cost) ──────────────────
+            # The rotation probe already produced low-DPI digit text for this
+            # angle.  Try to match from it before burning DPI_STRONG OCR calls.
+            _pt_digits, _pt_text = probe_texts.get(rot, ("", ""))
+            for _pt_src, _pt_label in ((_pt_digits, "ProbeDigits"), (_pt_text, "ProbeText")):
+                if not _pt_src:
+                    continue
+                _pt_400 = extract_awb_from_400_pattern(_pt_src)
+                if _pt_400:
+                    timings["rotation_ms"] += round((time.perf_counter() - rot_start) * 1000, 1)
+                    complete_match(
+                        _pt_400,
+                        f"Probe-{rot}-{_pt_label}-400",
+                        f"Matched by {_pt_label} 400-pattern at {rot}°",
+                    )
+                    return True
+                _pt_cr = run_clean_priority_gate(_pt_src, f"Probe-{rot}-{_pt_label}")
+                if _pt_cr["status"] == "matched":
+                    timings["rotation_ms"] += round((time.perf_counter() - rot_start) * 1000, 1)
+                    complete_match(
+                        _pt_cr["awb"],
+                        f"Probe-{rot}-{_pt_label}-{_pt_cr['method']}",
+                        f"Matched clean from {_pt_label} at {rot}°",
+                    )
+                    return True
+                if _pt_cr["status"] == "tie":
+                    timings["rotation_ms"] += round((time.perf_counter() - rot_start) * 1000, 1)
+                    send_review(
+                        f"Ambiguous {_pt_label} {rot}° clean tie: {_pt_cr.get('ties', [])[:8]}",
+                        f"Probe-{rot}-{_pt_label}",
+                    )
+                    return True
+                _pt_h, _pt_s = extract_tiered_candidates(_pt_src, awb_set)
+                merge_stage_candidates(_pt_h, _pt_s, f"Probe-{rot}-{_pt_label}")
+                _pt_res = run_exact_priority()
+                if _pt_res["status"] == "matched":
+                    timings["rotation_ms"] += round((time.perf_counter() - rot_start) * 1000, 1)
+                    complete_match(
+                        _pt_res["awb"],
+                        f"Probe-{rot}-{_pt_label}-{_pt_res['method']}",
+                        f"Matched exact from {_pt_label} at {rot}°",
+                    )
+                    return True
+                if _pt_res["status"] == "tie":
+                    timings["rotation_ms"] += round((time.perf_counter() - rot_start) * 1000, 1)
+                    send_review(
+                        f"Ambiguous {_pt_label} {rot}° exact tie: {_pt_res.get('ties', [])[:8]}",
+                        f"Probe-{rot}-{_pt_label}",
+                    )
+                    return True
+            # ── end probe pre-check ─────────────────────────────────────────
+
             rimg = get_image(DPI_STRONG, rot)
             rot_subpasses = [
                 (f"OCR-Rotation-{rot}-PSM6",   170, False, 6),
@@ -2340,15 +2438,44 @@ def process_pdf(
     # =====================================================================
     # ROUTE EXECUTION — wrapped so timeout captures all accumulated state
     # =====================================================================
+
+    # Cross-stage consensus: if the same HIGH candidate(s) have been seen in
+    # 3+ distinct stages and NONE of them are in the DB, running the rotation
+    # fallback for an UPRIGHT doc just re-reads the same stable candidate at
+    # wrong angles.  Skip it — Stage 5 / 5.5 (different preprocessing) still
+    # run and can find genuinely different candidates.
+    # NOT applied to ROTATED docs: Stage 4 tries the probe angle where the real
+    # AWB may finally be legible.
+    def _stable_high_pool_no_db_match() -> bool:
+        """True when rotation passes are very unlikely to add new signal."""
+        if _route != "UPRIGHT":
+            return False
+        stable_high = {
+            c for c in running_high
+            if len(candidate_stage_hits.get(c, set())) >= 3
+        }
+        if not stable_high:
+            return False
+        # If anything already matches DB (exact or tolerance), don't shortcut
+        if running_high & awb_set or running_standard & awb_set:
+            return False
+        log(
+            f"[CONSENSUS] Skipping rotation fallback — {len(stable_high)} stable HIGH "
+            f"candidate(s) seen in 3+ stages, no DB match, UPRIGHT confirmed"
+        )
+        return True
+
+    _skip_rotation = _stable_high_pool_no_db_match()
+
     try:
         # Execute routes
         if _route == "UPRIGHT":
-            # Stage 5.5 -> 5 -> 4 (last resort)
+            # Stage 5.5 -> 5 -> 4 (last resort, skipped on stable non-DB pool)
             if ENABLE_UPSCALED_RESCUE_PASS and _run_upscale_rescue():
                 return "MATCHED"
             if _run_table_pass():
                 return "MATCHED"
-            if _run_rotation_passes():
+            if not _skip_rotation and _run_rotation_passes():
                 return "MATCHED"
         else:
             if _angle_certainty == "CERTAIN":
@@ -2360,8 +2487,21 @@ def process_pdf(
                     return "MATCHED"
                 if _run_rotation_passes():
                     return "MATCHED"
+            elif _angle_certainty == "UNCERTAIN":
+                # ROTATED UNCERTAIN: table first, then rotation.
+                # Probe margin is low — rotation evidence is weak.  Table pass
+                # (PSM3) is fast (~2-8s) and catches table-layout AWBs before
+                # we spend 40-60s on rotation angles that may return the same
+                # non-DB candidates.  If table finds nothing, rotation still
+                # runs in full.
+                if _run_table_pass():
+                    return "MATCHED"
+                if _run_rotation_passes():
+                    return "MATCHED"
+                if ENABLE_UPSCALED_RESCUE_PASS and _run_upscale_rescue():
+                    return "MATCHED"
             else:
-                # ROTATED uncertain/likely: keep existing order.
+                # ROTATED LIKELY: rotation first (stronger probe signal).
                 if _run_rotation_passes():
                     return "MATCHED"
                 if _run_table_pass():
@@ -2369,8 +2509,9 @@ def process_pdf(
                 if ENABLE_UPSCALED_RESCUE_PASS and _run_upscale_rescue():
                     return "MATCHED"
 
-        # Final angle fallback for CERTAIN/LIKELY — try deferred angles now
-        if _angle_certainty in ("CERTAIN", "LIKELY") and ENABLE_ROTATION_LAST_RESORT:
+        # Final angle fallback for CERTAIN/LIKELY — skip when rotation is already
+        # known to be pointless (stable UPRIGHT pool with no DB match).
+        if _angle_certainty in ("CERTAIN", "LIKELY") and ENABLE_ROTATION_LAST_RESORT and not _skip_rotation:
             _deferred = sorted(
                 [r for r in [90, 180, 270, 0] if r != base_angle],
                 key=lambda r: probe_scores.get(r, 0),
@@ -2594,27 +2735,7 @@ def process_pdf(
     except _TimeoutDeferred:
         # Capture all accumulated state so the third-pass can resume without
         # re-running any stage that already completed.
-        _captured: Dict[str, Any] = {
-            "probe_scores":         dict(probe_scores),
-            "probe_texts":          {k: (v[0], v[1] if len(v) > 1 else "") for k, v in probe_texts.items()},
-            "base_angle":           base_angle,
-            "_angle_certainty":     _angle_certainty,
-            "_rotation_hint":       _rotation_hint,
-            "_is_image_only":       _is_image_only,
-            "running_high":         list(running_high),
-            "running_standard":     list(running_standard),
-            "candidate_stage_hits": {k: list(v) for k, v in candidate_stage_hits.items()},
-            "candidate_confidence": dict(candidate_confidence),
-            "all_tried":            list(all_tried),
-            "quarantine":           {k: list(v) for k, v in quarantine.items()},
-            # ocr_cache: serialise as [[key_list, value], ...] pairs so that
-            # tuple keys round-trip correctly through JSON.
-            "ocr_cache":            [
-                [list(k), v] for k, v in ocr_cache.items()
-                if isinstance(v, str)
-            ],
-            "timings":              dict(timings),
-        }
+        _captured = _build_timeout_state()
         if _state_out is not None:
             _state_out.update(_captured)
         close_pdf()

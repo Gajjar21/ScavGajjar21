@@ -33,6 +33,7 @@ from V3.core.file_ops import (
     load_awb_set_from_excel,
     build_buckets,
     flush_awb_logs_buffer,
+    safe_move,
 )
 from V3.audit.logger import audit_event
 from V3.audit.tracker import rebuild_dashboard_now
@@ -41,15 +42,28 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 # ── Config aliases ────────────────────────────────────────────────────────────
-INBOX_DIR              = config.INBOX_DIR
-AWB_EXCEL_PATH         = config.AWB_EXCEL_PATH
-AWB_LOGS_PATH          = config.AWB_LOGS_PATH
-POLL_SECONDS           = config.POLL_SECONDS
-HEARTBEAT_SECONDS      = config.HEARTBEAT_SECONDS
-EXCEL_REFRESH_SECONDS  = config.EXCEL_REFRESH_SECONDS
-ENABLE_INBOX_TWO_PASS  = config.ENABLE_INBOX_TWO_PASS
-LONG_PASS_TIMEOUT_SECONDS = config.LONG_PASS_TIMEOUT_SECONDS
-EDM_EXISTS_CACHE_PATH  = config.EDM_AWB_EXISTS_CACHE
+INBOX_DIR                  = config.INBOX_DIR
+AWB_EXCEL_PATH             = config.AWB_EXCEL_PATH
+AWB_LOGS_PATH              = config.AWB_LOGS_PATH
+POLL_SECONDS               = config.POLL_SECONDS
+HEARTBEAT_SECONDS          = config.HEARTBEAT_SECONDS
+EXCEL_REFRESH_SECONDS      = config.EXCEL_REFRESH_SECONDS
+ENABLE_INBOX_TWO_PASS      = config.ENABLE_INBOX_TWO_PASS
+LONG_PASS_TIMEOUT_SECONDS  = config.LONG_PASS_TIMEOUT_SECONDS
+THIRD_PASS_TIMEOUT_SECONDS = config.THIRD_PASS_TIMEOUT_SECONDS
+GLOBAL_DOC_TIMEOUT_SECONDS = config.GLOBAL_DOC_TIMEOUT_SECONDS
+LARGE_FILE_THRESHOLD_BYTES = config.LARGE_FILE_THRESHOLD_BYTES
+EDM_EXISTS_CACHE_PATH      = config.EDM_AWB_EXISTS_CACHE
+
+
+# ── File-size helper ──────────────────────────────────────────────────────────
+
+def _fsize(path: str) -> int:
+    """Return file size in bytes; 0 if inaccessible."""
+    try:
+        return os.path.getsize(path)
+    except Exception:
+        return 0
 
 
 # ── EDM exists cache reset ────────────────────────────────────────────────────
@@ -176,6 +190,11 @@ def main() -> None:
     # Two-pass state
     deferred_long_pass:     list[str]       = []   # paths deferred by fast lane
     timeout_deferred_state: dict[str, dict] = {}   # path -> captured state dict
+    # Accumulated PROCESSING seconds per file (queue wait time does NOT count).
+    # This is the right metric for the global 2.5-min cap — a file waiting in
+    # the deferred queue while other docs run should not have that wait charged
+    # against its own budget.
+    _file_proc_seconds:     dict[str, float] = {}  # path -> total seconds in process_pdf()
 
     file_queue: Queue[str] = Queue()
     handler  = InboxPDFHandler(file_queue)
@@ -254,11 +273,14 @@ def main() -> None:
                 # ── Safety rescan (every 30s — watchdog handles real-time) ─
                 if now - last_rescan >= 30:
                     try:
+                        # Build set of files already in any queue — never re-enqueue
+                        # them (would cause fast→long→timeout→fast loops).
+                        _already_queued = (
+                            set(deferred_long_pass) | set(timeout_deferred_state.keys())
+                        )
                         for fn in INBOX_DIR.iterdir():
                             if fn.suffix.lower() == ".pdf":
-                                # Skip files already queued for third-pass —
-                                # re-enqueueing them causes fast→long→timeout loops.
-                                if str(fn) not in timeout_deferred_state:
+                                if str(fn) not in _already_queued:
                                     handler._enqueue(str(fn))
                     except Exception as e:
                         log(f"Rescan warning: {e}")
@@ -273,21 +295,49 @@ def main() -> None:
                     except Empty:
                         break
                     if not os.path.exists(path) or not path.lower().endswith(".pdf"):
+                        _file_proc_seconds.pop(path, None)
+                        continue
+                    # Skip files already sitting in a deferred queue — fast lane
+                    # must not process a doc that is already scheduled for long/third pass.
+                    if path in timeout_deferred_state or path in deferred_long_pass:
+                        continue
+                    # Global 2.5-min hard cap on accumulated PROCESSING time.
+                    # Queue wait time is NOT charged — only actual process_pdf() wall time.
+                    _proc_so_far = _file_proc_seconds.get(path, 0.0)
+                    if _proc_so_far >= GLOBAL_DOC_TIMEOUT_SECONDS:
+                        log(
+                            f"[GLOBAL-TIMEOUT] {os.path.basename(path)} exceeded "
+                            f"{GLOBAL_DOC_TIMEOUT_SECONDS:.0f}s processing ({_proc_so_far:.0f}s) — NEEDS_REVIEW"
+                        )
+                        try:
+                            safe_move(path, config.NEEDS_REVIEW_DIR)
+                        except Exception as _e:
+                            log(f"[GLOBAL-TIMEOUT] Could not move {os.path.basename(path)}: {_e}")
+                        _file_proc_seconds.pop(path, None)
+                        processed_any = True
                         continue
                     if ENABLE_INBOX_TWO_PASS:
+                        _t0 = time.perf_counter()
                         result = process_pdf(
                             str(path), awb_set, by_prefix, by_suffix,
                             allow_long_pass=False,
                         )
+                        _file_proc_seconds[path] = _proc_so_far + (time.perf_counter() - _t0)
                         if result in ("DEFERRED", "DEFERRED_URGENT"):
                             # Don't re-add files already queued for third-pass
-                            if str(path) not in timeout_deferred_state:
-                                deferred_long_pass.append(str(path))
+                            if path not in timeout_deferred_state and path not in deferred_long_pass:
+                                deferred_long_pass.append(path)
+                        elif not os.path.exists(path):
+                            _file_proc_seconds.pop(path, None)
                     else:
+                        _t0 = time.perf_counter()
                         process_pdf(
                             str(path), awb_set, by_prefix, by_suffix,
                             allow_long_pass=True,
                         )
+                        _file_proc_seconds[path] = _proc_so_far + (time.perf_counter() - _t0)
+                        if not os.path.exists(path):
+                            _file_proc_seconds.pop(path, None)
                     processed_any = True
 
                 # ── Long-pass: process deferred when fast queue empty ────
@@ -297,27 +347,68 @@ def main() -> None:
                     and file_queue.empty()
                     and deferred_long_pass
                 ):
+                    # Sort: small files first; files over threshold go to end.
+                    # This ensures large (slow) docs don't block smaller ones.
+                    deferred_long_pass.sort(key=lambda p: (
+                        1 if _fsize(p) > LARGE_FILE_THRESHOLD_BYTES else 0,
+                        _fsize(p),
+                    ))
                     _batch_count = 0
                     while deferred_long_pass and _batch_count < _DEFERRED_BATCH:
                         path = deferred_long_pass.pop(0)
                         if not os.path.exists(path):
+                            _file_proc_seconds.pop(path, None)
                             continue
-                        log(f"[LONG-PASS] Processing deferred: {os.path.basename(path)}")
+                        # Global cap check on accumulated processing time only
+                        _proc_so_far = _file_proc_seconds.get(path, 0.0)
+                        _remaining = GLOBAL_DOC_TIMEOUT_SECONDS - _proc_so_far
+                        if _remaining <= 0:
+                            log(
+                                f"[GLOBAL-TIMEOUT] {os.path.basename(path)} exceeded "
+                                f"{GLOBAL_DOC_TIMEOUT_SECONDS:.0f}s processing ({_proc_so_far:.0f}s) — NEEDS_REVIEW"
+                            )
+                            try:
+                                safe_move(path, config.NEEDS_REVIEW_DIR)
+                            except Exception as _e:
+                                log(f"[GLOBAL-TIMEOUT] Could not move {os.path.basename(path)}: {_e}")
+                            _file_proc_seconds.pop(path, None)
+                            processed_any = True
+                            _batch_count += 1
+                            if not file_queue.empty():
+                                break
+                            continue
+                        # Dynamic budget: LONG_PASS_TIMEOUT_SECONDS is the combined
+                        # fast-lane + long-pass budget. Fast-lane processing time is
+                        # charged against it so slow-OCR files don't get a free extra
+                        # full slot. Never drop below 10s so we always attempt something.
+                        _lp_remaining = max(LONG_PASS_TIMEOUT_SECONDS - _proc_so_far, 10.0)
+                        _budget = min(_lp_remaining, _remaining)
+                        log(
+                            f"[LONG-PASS] Processing deferred: {os.path.basename(path)} "
+                            f"(proc={_proc_so_far:.0f}s, budget={_budget:.0f}s)"
+                        )
                         state_out: dict = {}
+                        _t0 = time.perf_counter()
                         result = process_pdf(
                             str(path), awb_set, by_prefix, by_suffix,
                             allow_long_pass=True,
-                            timeout_seconds=LONG_PASS_TIMEOUT_SECONDS,
+                            timeout_seconds=_budget,
                             _state_out=state_out,
                         )
+                        _proc_so_far += time.perf_counter() - _t0
+                        _file_proc_seconds[path] = _proc_so_far
                         if result == "TIMEOUT_DEFERRED":
                             state_out["_enqueued_ts"] = time.time()
+                            state_out["_tp_attempts"] = 0
+                            state_out["_proc_seconds"] = _proc_so_far  # carry forward
                             timeout_deferred_state[path] = state_out
                             log(
                                 f"[TIMEOUT-DEFERRED] {os.path.basename(path)} "
                                 f"queued for third-pass "
                                 f"(total queued: {len(timeout_deferred_state)})"
                             )
+                        elif not os.path.exists(path):
+                            _file_proc_seconds.pop(path, None)
                         processed_any = True
                         _batch_count += 1
                         # Break early if new fast files arrived
@@ -339,22 +430,62 @@ def main() -> None:
                     for _sp in _stale:
                         log(f"[DEFERRED-EVICT] Evicting stale entry (>24h): {os.path.basename(_sp)}")
                         timeout_deferred_state.pop(_sp)
+                        _file_proc_seconds.pop(_sp, None)
                     while timeout_deferred_state and _tp_count < _THIRD_BATCH:
                         path, saved_state = next(iter(timeout_deferred_state.items()))
                         del timeout_deferred_state[path]
                         if not os.path.exists(path):
+                            _file_proc_seconds.pop(path, None)
                             continue
+                        tp_attempts = saved_state.get("_tp_attempts", 0)
+                        # Accumulated processing seconds — prefer value carried from long-pass
+                        _proc_so_far = saved_state.get(
+                            "_proc_seconds", _file_proc_seconds.get(path, 0.0)
+                        )
+                        _remaining = GLOBAL_DOC_TIMEOUT_SECONDS - _proc_so_far
+                        if _remaining <= 0 or tp_attempts >= 1:
+                            _reason = (
+                                f"exceeded {GLOBAL_DOC_TIMEOUT_SECONDS:.0f}s processing ({_proc_so_far:.0f}s)"
+                                if _remaining <= 0
+                                else f"exhausted third-pass retries ({tp_attempts})"
+                            )
+                            log(
+                                f"[THIRD-PASS-LIMIT] {os.path.basename(path)} {_reason} — routing to NEEDS_REVIEW"
+                            )
+                            try:
+                                safe_move(path, config.NEEDS_REVIEW_DIR)
+                            except Exception as _e:
+                                log(f"[THIRD-PASS-LIMIT] Could not move {os.path.basename(path)}: {_e}")
+                            _file_proc_seconds.pop(path, None)
+                            processed_any = True
+                            _tp_count += 1
+                            continue
+                        # Dynamic budget: cap to remaining global allowance
+                        _budget = min(THIRD_PASS_TIMEOUT_SECONDS, _remaining)
                         log(
                             f"[THIRD-PASS] Resuming: {os.path.basename(path)} "
-                            f"(remaining in third-pass queue: {len(timeout_deferred_state)})"
+                            f"(attempt {tp_attempts + 1}, proc={_proc_so_far:.0f}s, "
+                            f"budget={_budget:.0f}s, remaining in queue: {len(timeout_deferred_state)})"
                         )
-                        # No timeout on third-pass — let it run to completion
+                        saved_state["_tp_attempts"] = tp_attempts + 1
+                        _t0 = time.perf_counter()
                         process_pdf(
                             str(path), awb_set, by_prefix, by_suffix,
                             allow_long_pass=True,
-                            timeout_seconds=None,
+                            timeout_seconds=_budget,
                             resume_state=saved_state,
                         )
+                        _proc_so_far += time.perf_counter() - _t0
+                        _file_proc_seconds[path] = _proc_so_far
+                        # If file still in INBOX after third-pass, re-queue with updated
+                        # counter so next cycle enforces the retry limit.
+                        if os.path.exists(path):
+                            saved_state["_enqueued_ts"] = time.time()
+                            saved_state["_proc_seconds"] = _proc_so_far  # carry forward
+                            timeout_deferred_state[path] = saved_state
+                            log(f"[THIRD-PASS] {os.path.basename(path)} still present after third-pass — re-queued (will force NEEDS_REVIEW next cycle)")
+                        else:
+                            _file_proc_seconds.pop(path, None)
                         processed_any = True
                         _tp_count += 1
                         # Break early if new fast files arrived
