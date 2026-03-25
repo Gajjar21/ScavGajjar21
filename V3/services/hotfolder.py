@@ -27,6 +27,7 @@ from queue import Queue, Empty
 from V3 import config
 from V3.stages.pipeline import process_pdf
 from V3.services.edm_checker import is_edm_enabled
+from V3.core.awb_extractor import extract_awb_from_filename_strict
 from V3.core.file_ops import (
     log,
     require_tesseract,
@@ -289,11 +290,21 @@ def main() -> None:
                 processed_any = False
 
                 # ── Drain fast-lane queue ────────────────────────────────
+                # Collect all pending items then sort: files whose name
+                # contains a 12-digit AWB go first (Stage 0 matches them in
+                # <1ms — no OCR needed).  Everything else follows in FIFO order.
+                _pending: list[str] = []
                 while True:
                     try:
-                        path = file_queue.get_nowait()
+                        _pending.append(file_queue.get_nowait())
                     except Empty:
                         break
+                _pending.sort(
+                    key=lambda p: 0 if extract_awb_from_filename_strict(
+                        os.path.basename(p)
+                    ) is not None else 1
+                )
+                for path in _pending:
                     if not os.path.exists(path) or not path.lower().endswith(".pdf"):
                         _file_proc_seconds.pop(path, None)
                         continue
