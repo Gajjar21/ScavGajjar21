@@ -293,18 +293,35 @@ def main() -> None:
                 # Collect all pending items then sort: files whose name
                 # contains a 12-digit AWB go first (Stage 0 matches them in
                 # <1ms — no OCR needed).  Everything else follows in FIFO order.
+                # Between each file we re-drain the live queue so AWB-named
+                # arrivals can jump ahead of any remaining non-AWB work.
+                def _awb_sort_key(p: str) -> int:
+                    return 0 if extract_awb_from_filename_strict(os.path.basename(p)) is not None else 1
+
                 _pending: list[str] = []
                 while True:
                     try:
                         _pending.append(file_queue.get_nowait())
                     except Empty:
                         break
-                _pending.sort(
-                    key=lambda p: 0 if extract_awb_from_filename_strict(
-                        os.path.basename(p)
-                    ) is not None else 1
-                )
-                for path in _pending:
+                _pending.sort(key=_awb_sort_key)
+
+                _pi = 0
+                while _pi < len(_pending):
+                    # Pull any items that arrived while the previous file was
+                    # processing and merge them in — AWB-named ones jump ahead.
+                    _arrivals: list[str] = []
+                    while True:
+                        try:
+                            _arrivals.append(file_queue.get_nowait())
+                        except Empty:
+                            break
+                    if _arrivals:
+                        _pending = _pending[:_pi] + sorted(
+                            _arrivals + _pending[_pi:], key=_awb_sort_key
+                        )
+                    path = _pending[_pi]
+                    _pi += 1
                     if not os.path.exists(path) or not path.lower().endswith(".pdf"):
                         _file_proc_seconds.pop(path, None)
                         continue
