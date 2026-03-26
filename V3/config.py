@@ -239,6 +239,7 @@ INBOX_EMPTY_MAX_WAIT           = _int("INBOX_EMPTY_MAX_WAIT", 1800)
 PROCESSED_EMPTY_STABLE_SECONDS = _int("PROCESSED_EMPTY_STABLE_SECONDS", 5)
 PROCESSED_EMPTY_MAX_WAIT       = _int("PROCESSED_EMPTY_MAX_WAIT", 600)
 MIN_CLEAN_BATCHES_FOR_AUTO     = _int("MIN_CLEAN_BATCHES_FOR_AUTO", 2)
+AUTO_FORCE_BATCH_AGE_SECONDS   = _int("AUTO_FORCE_BATCH_AGE_SECONDS", 1800)  # 30 min
 
 # ── Audit ────────────────────────────────────────────────────────────────────
 AUDIT_XLSX_PATH      = DATA_DIR / "pipeline_audit.xlsx"

@@ -448,6 +448,17 @@ def process_pdf(
             reason=reason,
             timings_ms=timings,
         )
+        # Write terminal result to Excel HotfolderV2 sheet.
+        _secs   = round(timings["total_active_ms"] / 1000.0, 3)
+        _ocr_ms = timings.get("ocr_context_ms")
+        if status == "MATCHED":
+            processed_fn = f"{awb}.pdf" if awb else ""
+            record_hotfolder_end(
+                name, awb or "", processed_fn, match_method,
+                hotfolder_secs=_secs, ocr_context_ms=_ocr_ms,
+            )
+        else:
+            record_hotfolder_needs_review(name, reason or status, hotfolder_secs=_secs)
         log(
             f"[TIMING] file={name} method={match_method} route={route} "
             f"filename_ms={timings['filename_ms']} text_layer_ms={timings['text_layer_ms']} "

@@ -81,6 +81,7 @@ INBOX_EMPTY_MAX_WAIT           = config.INBOX_EMPTY_MAX_WAIT
 PROCESSED_EMPTY_STABLE_SECONDS = config.PROCESSED_EMPTY_STABLE_SECONDS
 PROCESSED_EMPTY_MAX_WAIT       = config.PROCESSED_EMPTY_MAX_WAIT
 MIN_CLEAN_BATCHES_FOR_AUTO     = config.MIN_CLEAN_BATCHES_FOR_AUTO
+AUTO_FORCE_BATCH_AGE_SECONDS   = config.AUTO_FORCE_BATCH_AGE_SECONDS
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -158,6 +159,17 @@ def processed_pdf_count() -> int:
 
 def clean_plus_rejected_count() -> int:
     return _count_pdfs(config.CLEAN_DIR) + _count_pdfs(config.REJECTED_DIR)
+
+
+def _oldest_clean_file_age_seconds() -> float | None:
+    """Return the age in seconds of the oldest PDF in CLEAN, or None if empty."""
+    try:
+        files = list(config.CLEAN_DIR.glob("*.pdf"))
+        if not files:
+            return None
+        return time.time() - min(f.stat().st_mtime for f in files)
+    except Exception:
+        return None
 
 
 def wait_until_inbox_empty(log_fn, stable_seconds=8, max_wait=1800, stop_event=None) -> bool:
@@ -366,6 +378,7 @@ class App(tk.Tk):
         self.auto_stop_event         = threading.Event()
         self.auto_thread             = None
         self._stats_inflight         = False
+        self._perf_last_good_stats: dict | None = None   # guard against all-zero glitch reads
         self._is_closing             = False
         self._audit_offset           = 0
         self._audit_inode            = None
@@ -387,6 +400,7 @@ class App(tk.Tk):
         self._batch_candidate_counts = {"strong": 0, "mix": 0, "weak": 0}
         self._batch_tier_totals = {"strong": 0, "mix": 0, "weak": 0}
         self._batch_candidate_reset_job = None
+        self._edm_off_move_job = None
         self._perf_extra_complete = 0
         self._perf_extra_batches = 0
         self._summary_last_event_ts = {"match": 0.0, "edm": 0.0, "batch": 0.0}
@@ -416,6 +430,9 @@ class App(tk.Tk):
         self._refresh_live_status()
         self._request_count_refresh(0)
         self._start_count_refresh()
+        # Pre-settle all grid/pack geometry before the window is first painted.
+        # Without this, the right panel snaps to its final size after first render.
+        self.update_idletasks()
         self.bind("<FocusIn>", self._on_app_focus_in)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -450,16 +467,7 @@ class App(tk.Tk):
             )
 
     def _trim_log_rows(self):
-        """Scheduled background trim to keep log widget memory bounded."""
-        if getattr(self, "_is_closing", False):
-            return
-        while len(self._log_rows) > self._ui_log_max_rows:
-            row = self._log_rows.pop(0)
-            try:
-                row["row"].destroy()
-            except Exception:
-                pass
-        self.after(60000, self._trim_log_rows)
+        """No-op — log is now a fixed-widget panel; no rows to trim."""
 
     # ─────────────────────────────────────────────────────────────────────────
     # UI CONSTRUCTION
@@ -1170,93 +1178,92 @@ class App(tk.Tk):
             font=FONT_TITLE, fg=TEXT_SEC, bg=_card_hdr_bg,
             padx=10, pady=6,
         ).pack(side="left")
-        self.lbl_log_count = tk.Label(
-            tl_hdr, text="0 lines",
-            font=FONT_SMALL, fg=TEXT_MUTED, bg=_card_hdr_bg,
-        )
         self.btn_clear_log_inline = _btn(
             tl_hdr, "Clear", self.clear_log,
             width=9, bg="#fff5f5", fg="#d14a4a", padx=10, pady=4,
         )
         self.btn_clear_log_inline.pack(side="left", padx=(0, 10), pady=4)
 
+        # ── Fixed-widget activity body (no dynamic widget creation at runtime) ─
+        activity_body = tk.Frame(tl_card, bg=PANEL_BG)
+        activity_body.grid(row=1, column=0, sticky="nsew", padx=14, pady=12)
+        activity_body.grid_columnconfigure(0, weight=1)
+        activity_body.grid_columnconfigure(1, weight=1)
+
+        # Stage status pills — 1×3 row, only .config() updates during runtime
+        _IDLE_DOT = "#c8d0da"
+        self._stage_pills: dict = {}  # key → (frame, dot_canvas, text_label, active_color)
+        _pill_defs = [
+            ("AWB",   "Searching for AWBs",  "#4a33a2", 0, 0),
+            ("EDM",   "Checking duplicates", "#1f78d1", 0, 1),
+            ("BATCH", "Building batches",    "#2f9d57", 0, 2),
+        ]
+        activity_body.grid_columnconfigure(2, weight=1)
+        for _sk, _pill_txt, _acol, _pr, _pc in _pill_defs:
+            _pf = tk.Frame(activity_body, bg=PANEL_BG, bd=0, highlightthickness=0)
+            _pf.grid(row=_pr, column=_pc, sticky="ew", padx=(0, 8), pady=(0, 8))
+            _dot = tk.Canvas(_pf, width=9, height=9, bg=PANEL_BG,
+                             highlightthickness=0, bd=0)
+            _dot.create_oval(1, 1, 8, 8, fill=_IDLE_DOT, outline=_IDLE_DOT, tags="dot")
+            _dot.pack(side="left", padx=(0, 6))
+            _lbl = tk.Label(_pf, text=_pill_txt, font=FONT_SMALL,
+                            fg=TEXT_MUTED, bg=PANEL_BG, anchor="w")
+            _lbl.pack(side="left", fill="x")
+            self._stage_pills[_sk] = (_pf, _dot, _lbl, _acol)
+        self._stage_active_jobs: dict = {}  # stage_key → after() job id
+
+        # Separator
+        tk.Frame(activity_body, bg="#e0e6f0", height=1).grid(
+            row=2, column=0, columnspan=3, sticky="ew", pady=(2, 10))
+
+        # Recent Matches header
+        tk.Label(
+            activity_body, text="RECENT MATCHES",
+            font=(FONT_SMALL[0], 8, "bold"), fg=TEXT_MUTED, bg=PANEL_BG, anchor="w",
+        ).grid(row=3, column=0, columnspan=3, sticky="ew", pady=(0, 4))
+
+        # 3 fixed recent-match rows — only text/colour updated at runtime
+        self._recent_awb_lbls: list = []  # list of (dot_canvas, awb_label, time_label)
+        for _i in range(3):
+            _rf = tk.Frame(activity_body, bg=PANEL_BG, bd=0, highlightthickness=0)
+            _rf.grid(row=4 + _i, column=0, columnspan=3, sticky="ew", pady=1)
+            _d2 = tk.Canvas(_rf, width=9, height=9, bg=PANEL_BG,
+                            highlightthickness=0, bd=0)
+            _d2.create_oval(1, 1, 8, 8, fill=_IDLE_DOT, outline=_IDLE_DOT, tags="dot")
+            _d2.pack(side="left", padx=(0, 6))
+            _l2 = tk.Label(_rf, text="—", font=FONT_SMALL,
+                           fg=TEXT_MUTED, bg=PANEL_BG, anchor="w")
+            _l2.pack(side="left", fill="x", expand=True)
+            _t2 = tk.Label(_rf, text="", font=(FONT_SMALL[0], FONT_SMALL[1]),
+                           fg=TEXT_MUTED, bg=PANEL_BG, anchor="e")
+            _t2.pack(side="right", padx=(4, 0))
+            self._recent_awb_lbls.append((_d2, _l2, _t2))
+
+        # Separator
+        tk.Frame(activity_body, bg="#e0e6f0", height=1).grid(
+            row=7, column=0, columnspan=3, sticky="ew", pady=(10, 6))
+
+        # Status line — single label, text-only updates
+        self._live_status_lbl = tk.Label(
+            activity_body, text="Ready",
+            font=FONT_SMALL, fg=TEXT_MUTED, bg=PANEL_BG, anchor="w",
+        )
+        self._live_status_lbl.grid(row=8, column=0, columnspan=3, sticky="ew")
+
+        # Back-compat stubs (export / match-card code still references these)
+        self._match_cards = deque(maxlen=5)
+        self._match_card_labels = []
         self._search_var = tk.StringVar(value="")
         self._severity_var = tk.StringVar(value="All")
         self._autoscroll = tk.BooleanVar(value=True)
         self._wrap_log = tk.BooleanVar(value=True)
+        self._log_rows = []
+        self._log_search_job = None
+        self._log_filter_refresh_job = None
+        self._ui_log_max_rows = 250
+        self._last_activity_stage = None
 
-        search_wrap = tk.Frame(tl_hdr, bg=_card_hdr_bg)
-        search_wrap.pack(side="right", padx=10, pady=5)
-        tk.Label(
-            search_wrap, text="Search:",
-            font=FONT_SMALL, fg=TEXT_SEC, bg=_card_hdr_bg,
-        ).pack(side="left", padx=(0, 6))
-        self.entry_log_search = tk.Entry(
-            search_wrap, textvariable=self._search_var, width=14, font=FONT_SMALL,
-            relief="flat", bd=1,
-        )
-        self.entry_log_search.pack(side="left")
-        self.entry_log_search.bind("<KeyRelease>", self._on_search_log)
-        tk.Checkbutton(
-            search_wrap, text="Auto",
-            variable=self._autoscroll,
-            font=FONT_SMALL, bg=_card_hdr_bg, fg=TEXT_SEC,
-            activebackground=_card_hdr_bg, selectcolor="#dbe9ff",
-            highlightthickness=0, bd=0,
-        ).pack(side="left", padx=(10, 6))
-        tk.Checkbutton(
-            search_wrap, text="Wrap",
-            variable=self._wrap_log, command=self._toggle_wrap_log,
-            font=FONT_SMALL, bg=_card_hdr_bg, fg=TEXT_SEC,
-            activebackground=_card_hdr_bg, selectcolor="#dbe9ff",
-            highlightthickness=0, bd=0,
-        ).pack(side="left", padx=(0, 6))
-        tk.Label(
-            search_wrap, text="Filter:",
-            font=FONT_SMALL, fg=TEXT_SEC, bg=_card_hdr_bg,
-        ).pack(side="left", padx=(2, 4))
-        self.filter_menu = tk.OptionMenu(
-            search_wrap, self._severity_var, "All", "Errors", "Warnings", "Success", "Stages",
-            command=lambda _v: self._apply_search_highlight(),
-        )
-        self.filter_menu.config(
-            font=FONT_SMALL, bg="#ffffff", fg=TEXT_FG,
-            activebackground=BTN_HOVER, activeforeground=TEXT_FG,
-            highlightthickness=1, highlightbackground="#d6deeb", bd=0,
-            width=8,
-        )
-        self.filter_menu["menu"].config(font=FONT_SMALL, bg="#ffffff", fg=TEXT_FG)
-        self.filter_menu.pack(side="left")
-
-        activity_body = tk.Frame(tl_card, bg=PANEL_BG)
-        activity_body.grid(row=1, column=0, sticky="nsew", padx=14, pady=12)
-        activity_body.grid_columnconfigure(0, weight=1)
-        activity_body.grid_rowconfigure(0, weight=1)
-
-        self._match_cards = deque(maxlen=5)
-        self._match_card_labels = []
-        feed_col = tk.Frame(activity_body, bg=PANEL_BG)
-        feed_col.grid(row=0, column=0, sticky="nsew")
-        feed_col.grid_columnconfigure(0, weight=1)
-        feed_col.grid_rowconfigure(0, weight=1)
-
-        self.log_feed_wrap = tk.Frame(feed_col, bg="#fafcff", bd=0, highlightthickness=0)
-        self.log_feed_wrap.grid(row=0, column=0, sticky="nsew")
-        self.log_feed_canvas = tk.Canvas(self.log_feed_wrap, bg="#fafcff", highlightthickness=0, bd=0)
-        self.log_feed_scroll = tk.Scrollbar(self.log_feed_wrap, orient="vertical", command=self.log_feed_canvas.yview)
-        self.log_feed_canvas.configure(yscrollcommand=self.log_feed_scroll.set)
-        self.log_feed_inner = tk.Frame(self.log_feed_canvas, bg="#fafcff")
-        self._log_feed_window = self.log_feed_canvas.create_window((0, 0), window=self.log_feed_inner, anchor="nw")
-        self.log_feed_inner.bind(
-            "<Configure>",
-            lambda _e: self.log_feed_canvas.configure(scrollregion=self.log_feed_canvas.bbox("all")),
-        )
-        self.log_feed_canvas.bind("<Configure>", self._on_log_canvas_configure)
-        self._bind_log_wheel_events()
-        self.log_feed_canvas.pack(side="left", fill="both", expand=True)
-        self.log_feed_scroll.pack(side="right", fill="y")
-
-        # Hidden plain-text mirror (for export and tag setup)
+        # Hidden plain-text mirror (for log export)
         self.log_widget = scrolledtext.ScrolledText(
             self, wrap=tk.WORD, height=1, font=FONT_MONO,
         )
@@ -1264,13 +1271,8 @@ class App(tk.Tk):
             state="disabled", bg="#fafcff", fg=TEXT_FG,
             insertbackground=TEXT_FG,
         )
-        self._log_rows  = []
         self._log_lines = []
         self._log_export_lines = []
-        self._log_search_job = None
-        self._log_filter_refresh_job = None
-        self._ui_log_max_rows = 250
-        self.after(60000, self._trim_log_rows)
 
         # ═══════════════════════════════════════════════════════════════════════
         # STATUS BAR + BOTTOM BAR
@@ -2407,6 +2409,48 @@ class App(tk.Tk):
             else:
                 lbl.config(text="• waiting for match events...", fg=TEXT_MUTED)
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # LIVE ACTIVITY PANEL — zero widget-creation helpers
+    # ─────────────────────────────────────────────────────────────────────────
+    def _pulse_stage(self, stage_key: str):
+        """Light up a stage pill steadily. No timer — pills stay lit until clear_log or stop."""
+        if not hasattr(self, "_stage_pills"):
+            return
+        pill_info = self._stage_pills.get(stage_key)
+        if pill_info is None:
+            return
+        _pf, dot, lbl, active_col = pill_info
+        try:
+            dot.itemconfig("dot", fill=active_col, outline=active_col)
+            lbl.config(fg=TEXT_FG)
+        except Exception:
+            pass
+
+    def _push_recent_awb(self, awb: str, _method: str, _conf: str, timing_str: str):
+        """Slide the 3 fixed recent-AWB rows: new entry at top, others shift down. Config-only."""
+        rows = getattr(self, "_recent_awb_lbls", [])
+        if not rows:
+            return
+        # Shift existing entries down (bottom ← middle ← top).
+        for i in range(len(rows) - 1, 0, -1):
+            _d_prev, _l_prev, _t_prev = rows[i - 1]
+            _d_cur, _l_cur, _t_cur = rows[i]
+            try:
+                _prev_fill = _d_prev.itemcget("dot", "fill")
+                _d_cur.itemconfig("dot", fill=_prev_fill, outline=_prev_fill)
+                _l_cur.config(text=_l_prev.cget("text"), fg=_l_prev.cget("fg"))
+                _t_cur.config(text=_t_prev.cget("text"))
+            except Exception:
+                pass
+        # Place new entry at top row.
+        _d0, _l0, _t0 = rows[0]
+        try:
+            _d0.itemconfig("dot", fill=OK, outline=OK)
+            _l0.config(text=f"AWB {awb}", fg=OK)
+            _t0.config(text=timing_str)
+        except Exception:
+            pass
+
     def _update_status_badges(self):
         if not hasattr(self, "lbl_status_strip"):
             return
@@ -2524,46 +2568,16 @@ class App(tk.Tk):
         return f"{badge_clean} | {msg_clean}"
 
     def _toggle_wrap_log(self):
-        wrap_len = max(200, self.log_feed_canvas.winfo_width() - 190) if self._wrap_log.get() else 10000
-        for row in self._log_rows:
-            row["msg_lbl"].config(wraplength=wrap_len)
+        """No-op — log is now a fixed-widget panel."""
 
     def _bind_log_wheel_events(self):
-        widgets = [self.log_feed_canvas, self.log_feed_inner, self.log_feed_wrap]
-        for w in widgets:
-            try:
-                w.bind("<MouseWheel>", self._on_log_mousewheel)
-                w.bind("<Shift-MouseWheel>", self._on_log_mousewheel)
-                w.bind("<Button-4>", self._on_log_mousewheel)
-                w.bind("<Button-5>", self._on_log_mousewheel)
-            except Exception:
-                pass
+        """No-op — no scrollable canvas in the new live activity panel."""
 
     def _on_log_mousewheel(self, event):
-        try:
-            if getattr(event, "num", None) == 4:
-                step = -2
-            elif getattr(event, "num", None) == 5:
-                step = 2
-            else:
-                delta = int(getattr(event, "delta", 0))
-                if delta == 0:
-                    return "break"
-                # macOS wheel deltas are small/frequent; Windows are multiples of 120
-                step = -1 * max(1, min(8, abs(delta) // 40))
-                if delta < 0:
-                    step = abs(step)
-            self.log_feed_canvas.yview_scroll(step, "units")
-        except Exception:
-            return None
-        return "break"
+        """No-op."""
 
     def _on_log_canvas_configure(self, event):
-        try:
-            self.log_feed_canvas.itemconfigure(self._log_feed_window, width=event.width)
-        except Exception:
-            pass
-        self._toggle_wrap_log()
+        """No-op."""
 
     # ─────────────────────────────────────────────────────────────────────────
     # CLOCK
@@ -2604,18 +2618,20 @@ class App(tk.Tk):
         prev = (session.get("employee_id", "") or "").strip()
         fallback = prev or "UNKNOWN"
 
+        # Compute position before creating the Toplevel so update_idletasks()
+        # doesn't trigger a geometry recalculation while the dialog is mid-init.
+        width = 430
+        height = 210
+        self.update_idletasks()
+        x = self.winfo_rootx() + max(0, (self.winfo_width() - width) // 2)
+        y = self.winfo_rooty() + max(0, (self.winfo_height() - height) // 2)
+
         dialog = tk.Toplevel(self)
         dialog.title("Employee Login — AWB Pipeline V3")
         dialog.configure(bg=APP_BG)
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
-
-        width = 430
-        height = 210
-        self.update_idletasks()
-        x = self.winfo_rootx() + max(0, (self.winfo_width() - width) // 2)
-        y = self.winfo_rooty() + max(0, (self.winfo_height() - height) // 2)
         dialog.geometry(f"{width}x{height}+{x}+{y}")
 
         hdr = tk.Frame(dialog, bg=FEDEX_PURPLE, height=40)
@@ -2713,23 +2729,21 @@ class App(tk.Tk):
             or self.auto_running
             or self.full_cycle_running
         )
-        self._safety_count_resync(is_active)
-        # Heavier refresh blocks run less often when idle.
-        if is_active or (self._refresh_tick_counter % 2 == 0):
+        # Folder counts run every tick on a background thread — no blocking.
+        self._trigger_bg_count_refresh()
+        # Heavier I/O (stats xlsx + audit jsonl) every tick when active, every
+        # other tick when idle (they use their own inflight guards anyway).
+        if is_active or (self._refresh_tick_counter % 3 == 0):
             self._refresh_stats()
             self._refresh_audit_health()
         self._update_stage_status_panel()
         self._apply_summary_idle_decay()
         self._refresh_live_status()
-        next_ms = 3000 if is_active else 7000
+        next_ms = 1000 if is_active else 4000
         self.after(next_ms, self._start_count_refresh)
 
     def _safety_count_resync(self, is_active: bool):
-        now = time.monotonic()
-        interval = 30.0 if is_active else 60.0
-        if self._last_count_scan_ts <= 0.0 or (now - self._last_count_scan_ts) >= interval:
-            self._refresh_counts()
-            self._last_count_scan_ts = now
+        """No-op — folder counts now run every tick via _trigger_bg_count_refresh."""
 
     def _request_count_refresh(self, delay_ms: int = 100):
         if self._count_refresh_job is not None:
@@ -2762,6 +2776,7 @@ class App(tk.Tk):
                 self._audit_inode = inode
                 self._audit_offset = 0
                 self._audit_recent.clear()
+            _new_matched: list = []
             with audit_path.open("r", encoding="utf-8", errors="replace") as fh:
                 fh.seek(self._audit_offset)
                 for raw in fh:
@@ -2774,7 +2789,19 @@ class App(tk.Tk):
                         continue
                     if isinstance(row, dict):
                         self._audit_recent.append(row)
+                        if (str(row.get("stage", "")).upper() == "AWB_HOTFOLDER"
+                                and str(row.get("status", "")).upper() == "MATCHED"):
+                            _new_matched.append(row)
                 self._audit_offset = fh.tell()
+            # Push newly-seen matches to the fixed recent-AWBs panel.
+            for _ev in _new_matched:
+                _awb    = str(_ev.get("awb", "—"))
+                _method = str(_ev.get("match_method", "Matched"))
+                _conf   = self._infer_match_confidence(_method)
+                _ms     = self._extract_timing_ms(_ev.get("timings_ms"))
+                _timing = self._format_seconds_only(_ms) if _ms is not None else ""
+                self._pulse_stage("AWB")
+                self._push_recent_awb(_awb, _method, _conf, _timing)
         except Exception:
             self.lbl_quick_check.config(text="Quick check: EDM audit unavailable", fg=WARN)
             self._update_edm_duplicate_summary(state="ERROR", primary="Audit log unavailable", timing_text="", fg=WARN)
@@ -2883,20 +2910,64 @@ class App(tk.Tk):
             return WARN
         return self._default_fg
 
-    def _refresh_counts(self):
-        def _count_batches():
-            try:
-                return len(list(config.OUT_DIR.glob(f"{config.PRINT_STACK_BASENAME}_*.pdf")))
-            except Exception:
-                return None
+    def _trigger_bg_count_refresh(self):
+        """Scan folder counts on a background thread; apply to UI on the main thread.
 
-        inbox_n     = _count_pdfs(config.INBOX_DIR)
-        processed_n = _count_pdfs(config.PROCESSED_DIR)
-        clean_n     = _count_pdfs(config.CLEAN_DIR)
-        rejected_n  = _count_pdfs(config.REJECTED_DIR)
-        review_n    = _count_pdfs(config.NEEDS_REVIEW_DIR)
-        pending_n   = _count_pdfs(config.PENDING_PRINT_DIR)
-        out_n       = _count_batches()
+        Uses an inflight flag so overlapping scans are skipped — the previous
+        scan's result will arrive shortly via after(0, ...) anyway.
+        """
+        if getattr(self, "_bg_count_inflight", False):
+            return
+        self._bg_count_inflight = True
+
+        def _scan():
+            try:
+                counts = {
+                    "inbox":     _count_pdfs(config.INBOX_DIR),
+                    "processed": _count_pdfs(config.PROCESSED_DIR),
+                    "clean":     _count_pdfs(config.CLEAN_DIR),
+                    "rejected":  _count_pdfs(config.REJECTED_DIR),
+                    "review":    _count_pdfs(config.NEEDS_REVIEW_DIR),
+                    "pending":   _count_pdfs(config.PENDING_PRINT_DIR),
+                    "out":       len(list(config.OUT_DIR.glob(
+                                     f"{config.PRINT_STACK_BASENAME}_*.pdf"))),
+                }
+            except Exception:
+                counts = None
+            finally:
+                self._bg_count_inflight = False
+            if counts is not None:
+                try:
+                    self.after(0, lambda c=counts: self._refresh_counts(c))
+                except Exception:
+                    pass
+
+        threading.Thread(target=_scan, daemon=True).start()
+
+    def _refresh_counts(self, precomputed: dict | None = None):
+        if precomputed is not None:
+            inbox_n     = precomputed["inbox"]
+            processed_n = precomputed["processed"]
+            clean_n     = precomputed["clean"]
+            rejected_n  = precomputed["rejected"]
+            review_n    = precomputed["review"]
+            pending_n   = precomputed["pending"]
+            out_n       = precomputed["out"]
+        else:
+            # Synchronous fallback for immediate on-demand refreshes.
+            def _count_batches():
+                try:
+                    return len(list(config.OUT_DIR.glob(f"{config.PRINT_STACK_BASENAME}_*.pdf")))
+                except Exception:
+                    return None
+
+            inbox_n     = _count_pdfs(config.INBOX_DIR)
+            processed_n = _count_pdfs(config.PROCESSED_DIR)
+            clean_n     = _count_pdfs(config.CLEAN_DIR)
+            rejected_n  = _count_pdfs(config.REJECTED_DIR)
+            review_n    = _count_pdfs(config.NEEDS_REVIEW_DIR)
+            pending_n   = _count_pdfs(config.PENDING_PRINT_DIR)
+            out_n       = _count_batches()
 
         def _fmt(n):
             return str(n) if n is not None else "?"
@@ -2982,6 +3053,24 @@ class App(tk.Tk):
             failed   = int(stats["hot_failed"]   or 0)
             # PROCESSED = resolved files only (excludes IN-PROGRESS rows)
             resolved = complete + review + failed
+
+            # ── Stale-read guard ──────────────────────────────────────────────
+            # read_dashboard_stats() reads without a write lock, so it can catch
+            # the xlsx mid-save and return all-zeros.  If the new resolved count
+            # is zero but we previously had non-zero data, treat this as a bad
+            # read and keep the last-known-good values on screen.
+            _last = self._perf_last_good_stats
+            if _last is not None:
+                _last_resolved = (
+                    int(_last.get("hot_complete", 0))
+                    + int(_last.get("hot_review", 0))
+                    + int(_last.get("hot_failed", 0))
+                )
+                if resolved == 0 and _last_resolved > 0:
+                    return  # skip — looks like a corrupt/empty read
+            self._perf_last_good_stats = stats
+            # ─────────────────────────────────────────────────────────────────
+
             self._stat_labels["hot_total"].config(text=str(resolved))
             self._stat_labels["hot_complete"].config(text=str(complete))
             self._stat_labels["hot_review"].config(
@@ -3086,6 +3175,25 @@ class App(tk.Tk):
             pass
 
         edm_on = self.edm_enabled
+
+        # ── Sync Live Activity stage pills with actual service state ──────────
+        if hasattr(self, "_stage_pills"):
+            _IDLE_DOT = "#c8d0da"
+            for _sk, _running in (("AWB", awb_on), ("EDM", edm_dup_on), ("BATCH", batch_on)):
+                _info = self._stage_pills.get(_sk)
+                if _info is None:
+                    continue
+                _, _dot, _lbl, _acol = _info
+                try:
+                    if _running:
+                        _dot.itemconfig("dot", fill=_acol, outline=_acol)
+                        _lbl.config(fg=TEXT_FG)
+                    else:
+                        _dot.itemconfig("dot", fill=_IDLE_DOT, outline=_IDLE_DOT)
+                        _lbl.config(fg=TEXT_MUTED)
+                except Exception:
+                    pass
+        # ─────────────────────────────────────────────────────────────────────
 
         # Primary control button colours: keep top row visually unified with Full Cycle.
         top_row_bg = "#4a33a2"
@@ -3201,66 +3309,19 @@ class App(tk.Tk):
             self.log_append(f"[LOG ERROR] {e}")
 
     def _on_search_log(self, _event=None):
-        if self._log_search_job is not None:
-            try:
-                self.after_cancel(self._log_search_job)
-            except Exception:
-                pass
-        self._log_search_job = self.after(120, self._run_debounced_log_search)
+        """No-op — search removed in fixed-widget live activity panel."""
 
     def _run_debounced_log_search(self):
-        self._log_search_job = None
-        self._apply_search_highlight()
+        """No-op."""
 
     def _schedule_search_refresh(self, delay_ms: int = 100):
-        if self._log_filter_refresh_job is not None:
-            try:
-                self.after_cancel(self._log_filter_refresh_job)
-            except Exception:
-                pass
-        self._log_filter_refresh_job = self.after(delay_ms, self._run_scheduled_search_refresh)
+        """No-op."""
 
     def _run_scheduled_search_refresh(self):
-        self._log_filter_refresh_job = None
-        self._apply_search_highlight()
+        """No-op."""
 
     def _apply_search_highlight(self):
-        needle = (self._search_var.get() if hasattr(self, "_search_var") else "").strip().lower()
-        sev = self._severity_var.get() if hasattr(self, "_severity_var") else "All"
-
-        def _severity_hit(tag):
-            if sev == "All":
-                return True
-            if sev == "Errors":
-                return tag in {"error", "rejected"}
-            if sev == "Warnings":
-                return tag in {"warn", "review", "token"}
-            if sev == "Success":
-                return tag in {"success"}
-            if sev == "Stages":
-                return tag in {"stage", "info", "skip"}
-            return True
-
-        for row in self._log_rows:
-            raw_hit = needle in row.get("raw_lower", "")
-            pretty_hit = needle in row.get("pretty_lower", "")
-            text_hit = (not needle) or raw_hit or pretty_hit
-            sev_hit = _severity_hit(row.get("tag", "info"))
-            is_visible = text_hit and sev_hit
-            was_visible = row.get("visible", True)
-            if is_visible != was_visible:
-                if is_visible:
-                    row["row"].pack(fill="x", padx=6, pady=1)
-                else:
-                    row["row"].pack_forget()
-                row["visible"] = is_visible
-            matched = bool(needle and (raw_hit or pretty_hit))
-            msg_bg = "#fff3b0" if matched else row["base_bg"]
-            if row.get("msg_bg") != msg_bg:
-                row["row"].config(bg=row["base_bg"])
-                row["msg_lbl"].config(bg=msg_bg)
-                row["msg_bg"] = msg_bg
-        self.log_feed_canvas.configure(scrollregion=self.log_feed_canvas.bbox("all"))
+        """No-op — no scrollable log rows in the new panel."""
 
     # ─────────────────────────────────────────────────────────────────────────
     # FOLDER OPEN
@@ -3326,44 +3387,51 @@ class App(tk.Tk):
     # UI HELPERS
     # ─────────────────────────────────────────────────────────────────────────
     def clear_log(self):
-        if self._count_refresh_job is not None:
+        for _attr in ("_count_refresh_job", "_log_search_job", "_log_filter_refresh_job"):
+            _job = getattr(self, _attr, None)
+            if _job is not None:
+                try:
+                    self.after_cancel(_job)
+                except Exception:
+                    pass
+                setattr(self, _attr, None)
+        # Cancel all stage-pill pulse jobs
+        for _job2 in list(getattr(self, "_stage_active_jobs", {}).values()):
             try:
-                self.after_cancel(self._count_refresh_job)
+                self.after_cancel(_job2)
             except Exception:
                 pass
-            self._count_refresh_job = None
-        if self._log_search_job is not None:
-            try:
-                self.after_cancel(self._log_search_job)
-            except Exception:
-                pass
-            self._log_search_job = None
-        if self._log_filter_refresh_job is not None:
-            try:
-                self.after_cancel(self._log_filter_refresh_job)
-            except Exception:
-                pass
-            self._log_filter_refresh_job = None
-        for row in self._log_rows:
-            try:
-                row["row"].destroy()
-            except Exception:
-                pass
+        if hasattr(self, "_stage_active_jobs"):
+            self._stage_active_jobs.clear()
         self._log_rows = []
         self._log_lines = []
         self._log_export_lines = []
         self.log_widget.configure(state="normal")
         self.log_widget.delete("1.0", tk.END)
         self.log_widget.configure(state="disabled")
-        self.log_feed_canvas.yview_moveto(0.0)
+        # Reset stage pills to idle
+        _IDLE_DOT = "#c8d0da"
+        for _sk, (_pf, _dot, _lbl, _acol) in getattr(self, "_stage_pills", {}).items():
+            try:
+                _dot.itemconfig("dot", fill=_IDLE_DOT, outline=_IDLE_DOT)
+                _lbl.config(fg=TEXT_MUTED)
+            except Exception:
+                pass
+        # Reset recent AWB rows
+        for (_d2, _l2, _t2) in getattr(self, "_recent_awb_lbls", []):
+            try:
+                _d2.itemconfig("dot", fill=_IDLE_DOT, outline=_IDLE_DOT)
+                _l2.config(text="—", fg=TEXT_MUTED)
+                _t2.config(text="")
+            except Exception:
+                pass
+        # Reset status line
         try:
-            self.lbl_log_count.config(text="0 lines")
+            self._live_status_lbl.config(text="Ready", fg=TEXT_MUTED)
         except Exception:
             pass
         if hasattr(self, "_match_cards"):
             self._match_cards.clear()
-            for lbl in self._match_card_labels:
-                lbl.config(text="• waiting for match events...", fg=TEXT_MUTED)
         self._update_match_summary(timing_text="")
         self._update_edm_duplicate_summary(timing_text="")
         self._update_batch_prep_summary()
@@ -3374,6 +3442,7 @@ class App(tk.Tk):
         self._update_run_overview()
 
     def log_append(self, msg: str):
+        """Append a log message. No widgets are created — only pre-built labels are updated."""
         if getattr(self, "_is_closing", False):
             return
 
@@ -3388,11 +3457,10 @@ class App(tk.Tk):
                 except Exception:
                     payload = None
 
-            # Preserve a hidden plain-text mirror for export/back-compat.
+            # Hidden plain-text mirror for log export.
             self.log_widget.configure(state="normal")
             line_start = self.log_widget.index(tk.END)
             self.log_widget.insert(tk.END, message + "\n")
-
             msg_upper = message.upper()
             tag_name = "info"
             for cand, _colors, keywords in LOG_TAGS:
@@ -3404,126 +3472,44 @@ class App(tk.Tk):
             self.log_widget.configure(state="disabled")
 
             ts = time.strftime("%H:%M:%S")
-
-            base_bg = "#ffffff" if (len(self._log_rows) % 2 == 0) else "#f4f8fd"
-            fg, _bg = self._log_tag_styles.get(tag_name, (TEXT_FG, None))
             pretty_message = self._format_timeline_message(message, tag_name)
             hard_error = self._is_hard_error_event(message, tag_name)
-            # Hard failures (crashes, permission errors, etc.) always surface.
-            # Everything else goes through the strict two-pattern allowlist.
-            if hard_error:
-                visible_message = pretty_message
-            else:
-                visible_message = self._frontend_visible_message(pretty_message)
-            stage_key = self._classify_activity_stage(message, payload, pretty_message)
-            stage_colors = {
-                "AWB": "#4a33a2",
-                "EDM": "#1f78d1",
-                "BATCH": "#2f9d57",
-                "SYSTEM": "#7b8597",
-            }
-            stage_color = stage_colors.get(stage_key, "#7b8597")
-            badge_bg = {
-                "error":    CRIT,
-                "warn":     WARN,
-                "success":  OK,
-                "review":   REVIEW,
-                "rejected": CRIT,
-                "stage":    INFO,
-                "token":    FEDEX_PURPLE,
-                "skip":     "#9099a8",
-                "info":     "#607080",
-            }.get(tag_name, "#607080")
-
+            visible_message = pretty_message if hard_error else self._frontend_visible_message(pretty_message)
             badge_text = {
-                "error": "ERR",
-                "warn": "WARN",
-                "success": "OK",
-                "review": "REVIEW",
-                "rejected": "REJECT",
-                "stage": "STEP",
-                "token": "EDM",
-                "skip": "SKIP",
-                "info": "INFO",
+                "error": "ERR", "warn": "WARN", "success": "OK",
+                "review": "REVIEW", "rejected": "REJECT",
+                "stage": "STEP", "token": "EDM", "skip": "SKIP", "info": "INFO",
             }.get(tag_name, "INFO")
-            hard_error = self._is_hard_error_event(message, tag_name)
-            row = None
-            dot = None
-            msg_lbl = None
-            if visible_message is not None:
-                if self._last_activity_stage is not None and stage_key != self._last_activity_stage:
-                    tk.Frame(self.log_feed_inner, bg="#e8eef7", height=1).pack(fill="x", padx=6, pady=(3, 2))
-                row = tk.Frame(self.log_feed_inner, bg=base_bg, bd=0, highlightthickness=0)
-                row.pack(fill="x", padx=4, pady=0)
-                tk.Frame(row, bg=stage_color, width=3).pack(side="left", fill="y", padx=(0, 6))
-                row_content = tk.Frame(row, bg=base_bg, bd=0, highlightthickness=0)
-                row_content.pack(side="left", fill="x", expand=True)
 
-                dot = tk.Canvas(
-                    row_content, width=8, height=8, bg=base_bg,
-                    highlightthickness=0, bd=0
-                )
-                dot.create_oval(1, 1, 7, 7, fill=badge_bg, outline=badge_bg)
-                dot.pack(side="left", padx=(8, 8), pady=4)
+            # Export log (plain text only — no widget list).
+            self._log_lines.append(message)
+            self._log_export_lines.append(self._build_export_line(badge_text, pretty_message))
+            if len(self._log_lines) > LOG_MAX_LINES:
+                self._log_lines = self._log_lines[-LOG_MAX_LINES:]
+            if len(self._log_export_lines) > LOG_MAX_LINES:
+                self._log_export_lines = self._log_export_lines[-LOG_MAX_LINES:]
+            total_lines = int(self.log_widget.index("end-1c").split(".")[0])
+            if total_lines > LOG_MAX_LINES:
+                excess = total_lines - LOG_MAX_LINES
+                self.log_widget.configure(state="normal")
+                self.log_widget.delete("1.0", f"{excess + 1}.0")
+                self.log_widget.configure(state="disabled")
 
-                wrap_len = max(240, self.log_feed_canvas.winfo_width() - 54) if self._wrap_log.get() else 10000
-                msg_fg = TEXT_SEC
-                if hard_error and tag_name in {"error", "warn", "review", "rejected"}:
-                    msg_fg = fg or TEXT_FG
-                    if tag_name in {"error", "rejected"}:
-                        badge_bg = CRIT
-                    elif tag_name in {"warn", "review"}:
-                        badge_bg = WARN
-                else:
-                    # Keep soft/transient warnings/errors visually calm.
-                    badge_bg = "#607080"
-                msg_lbl = tk.Label(
-                    row_content, text=visible_message, anchor="w", justify="left",
-                    font=FONT_SMALL, fg=msg_fg, bg=base_bg,
-                    wraplength=wrap_len,
-                )
-                msg_lbl.pack(side="left", fill="x", expand=True, pady=3)
-                self._last_activity_stage = stage_key
+            # Pulse the matching stage pill (config-only — no widget creation).
+            stage_key = self._classify_activity_stage(message, payload, pretty_message)
+            self._pulse_stage(stage_key)
 
-            # Click / right-click interactions on log rows
-            _msg_capture = message
-            _ts_capture  = ts
-            for _w in (row, dot, msg_lbl):
-                if _w is None:
-                    continue
-                _w.bind("<Double-Button-1>",
-                        lambda _e, m=_msg_capture: self._copy_to_clipboard(m))
-                _w.bind("<Button-2>" if sys.platform == "darwin" else "<Button-3>",
-                        lambda _e, m=_msg_capture, t=_ts_capture:
-                        self._show_log_row_menu(_e, m, t))
+            # Update the status line for user-visible messages.
+            if visible_message:
                 try:
-                    _w.bind("<MouseWheel>", self._on_log_mousewheel)
-                    _w.bind("<Shift-MouseWheel>", self._on_log_mousewheel)
-                    _w.bind("<Button-4>", self._on_log_mousewheel)
-                    _w.bind("<Button-5>", self._on_log_mousewheel)
+                    self._live_status_lbl.config(
+                        text=f"{ts}  {visible_message[:90]}",
+                        fg=TEXT_SEC if not hard_error else CRIT,
+                    )
                 except Exception:
                     pass
 
-            if row is not None:
-                self._log_rows.append(
-                    {
-                        "row":       row,
-                        "dot":       dot,
-                        "msg_lbl":   msg_lbl,
-                        "raw_lower": message.lower(),
-                        "pretty_lower": visible_message.lower(),
-                        "base_bg":   base_bg,
-                        "msg_bg":    base_bg,
-                        "visible":   True,
-                        "tag":       tag_name,
-                        "stage":     stage_key,
-                    }
-                )
-            self._log_lines.append(message)
-            self._log_export_lines.append(self._build_export_line(badge_text, pretty_message))
-
-            # Fallback: AWB timing may arrive in plain [TIMING] lines.
-            # Keep the existing match card context and only refresh the timing badge.
+            # Timing fallback: keep existing match card timing fresh.
             text_timing_ms = self._extract_total_active_ms_from_timing_line(message)
             if text_timing_ms is not None:
                 try:
@@ -3546,7 +3532,15 @@ class App(tk.Tk):
 
             if self._should_refresh_counts_from_event(message, payload):
                 self._request_count_refresh(120)
-            if isinstance(payload, dict) and str(payload.get("stage", "")).upper() == "AWB_HOTFOLDER" and str(payload.get("status", "")).upper() == "MATCHED":
+                if (not self.edm_enabled
+                        and not self.is_edm_duplicate_running()
+                        and isinstance(payload, dict)
+                        and str(payload.get("stage", "")).upper() == "AWB_HOTFOLDER"):
+                    self._schedule_edm_off_clean_move()
+
+            if (isinstance(payload, dict)
+                    and str(payload.get("stage", "")).upper() == "AWB_HOTFOLDER"
+                    and str(payload.get("status", "")).upper() == "MATCHED"):
                 method = str(payload.get("match_method", "Matched"))
                 route = str(payload.get("route", "PROCESSED"))
                 awb = str(payload.get("awb", "—"))
@@ -3558,61 +3552,25 @@ class App(tk.Tk):
                     self._batch_tier_totals[bucket] += 1
                     self._refresh_batch_candidate_summary()
                     self._schedule_batch_candidate_reset()
-                signature = (
-                    payload.get("ts"),
-                    payload.get("file"),
-                    awb,
-                    method,
-                    route,
-                )
+                signature = (payload.get("ts"), payload.get("file"), awb, method, route)
                 hit_no = self._next_match_badge(signature)
+                conf = self._infer_match_confidence(method)
+                timing_str = self._format_seconds_only(match_ms) if match_ms is not None else ""
                 self._update_match_summary(
                     state=f"AWB MATCHED · {hit_no}",
                     primary=f"AWB {awb}",
                     line1=f"Type: {self._short_reason(method, 30)}",
-                    line2=f"Confidence: {self._infer_match_confidence(method)}",
+                    line2=f"Confidence: {conf}",
                     line3=f"Route: {route}",
-                    timing_text=(self._format_seconds_only(match_ms) if match_ms is not None else ""),
+                    timing_text=timing_str,
                     fg=OK,
                 )
+                # Push to the fixed recent-AWBs panel (config-only).
+                self._push_recent_awb(awb, method, conf, timing_str)
 
-            if self._is_key_match_event(message, pretty_message):
-                self._push_match_card(pretty_message)
-
-            # Cap log length consistently for both representations.
-            while len(self._log_rows) > self._ui_log_max_rows:
-                old = self._log_rows.pop(0)
-                try:
-                    old["row"].destroy()
-                except Exception:
-                    pass
-            if len(self._log_lines) > LOG_MAX_LINES:
-                self._log_lines = self._log_lines[-LOG_MAX_LINES:]
-            if len(self._log_export_lines) > LOG_MAX_LINES:
-                self._log_export_lines = self._log_export_lines[-LOG_MAX_LINES:]
-            total_lines = int(self.log_widget.index("end-1c").split(".")[0])
-            if total_lines > LOG_MAX_LINES:
-                excess = total_lines - LOG_MAX_LINES
-                self.log_widget.configure(state="normal")
-                self.log_widget.delete("1.0", f"{excess + 1}.0")
-                self.log_widget.configure(state="disabled")
-
-            self.log_feed_canvas.configure(scrollregion=self.log_feed_canvas.bbox("all"))
-            if getattr(self, "_autoscroll", None) is None or self._autoscroll.get():
-                self.log_feed_canvas.yview_moveto(1.0)
-            sev_active = hasattr(self, "_severity_var") and self._severity_var.get() != "All"
-            if getattr(self, "_search_var", None) is not None and (self._search_var.get().strip() or sev_active):
-                self._schedule_search_refresh(90)
-            # Update line-count badge
-            try:
-                n = len(self._log_rows)
-                self.lbl_log_count.config(text=f"{n} line{'s' if n != 1 else ''}")
-            except Exception:
-                pass
         try:
             self.after(0, _do)
         except Exception:
-            # App is closing/destroyed; ignore late async log events.
             pass
 
     def _should_refresh_counts_from_event(self, message: str, payload) -> bool:
@@ -3751,8 +3709,6 @@ class App(tk.Tk):
 
     def start_awb(self):
         if self.is_awb_running():
-            if not self.is_edm_duplicate_running():
-                self._start_edm_duplicate_checker()
             return
         save_state({"last_run_id": now_run_id()})
         self._awb_start_time = time.time()
@@ -3760,7 +3716,6 @@ class App(tk.Tk):
         self.log_append("\n=== AWB Hotfolder started ===")
         cmd = [sys.executable, "-u", "-m", "V3.services.hotfolder"]
         self.awb_proc = self._popen_utf8(cmd)
-        self._start_edm_duplicate_checker()
         self.btn_get_awb.config(text="Stop AWB")
         self._refresh_live_status()
 
@@ -3773,8 +3728,6 @@ class App(tk.Tk):
             rc = self.awb_proc.wait()
             self.awb_proc = None
             self._awb_start_time = None
-            if self.is_edm_duplicate_running() and id(self.edm_proc) not in self._expected_edm_stops:
-                self._stop_edm_duplicate_checker()
             self.after(0, lambda: self.btn_get_awb.config(text="Start AWB"))
             self.after(0, self._refresh_live_status)
             self.set_status("AWB stopped." if rc == 0 else "AWB ended with errors.")
@@ -3943,8 +3896,8 @@ class App(tk.Tk):
                     started_awb = True
                     self.start_awb()
                     time.sleep(0.5)
-
-                # EDM fallback runs inside hotfolder pipeline when enabled.
+                if self.edm_enabled and not self.is_edm_duplicate_running():
+                    self._start_edm_duplicate_checker()
 
                 # Wait for INBOX to drain
                 self.set_status("Full cycle: waiting INBOX empty...")
@@ -3961,11 +3914,15 @@ class App(tk.Tk):
                 # Let EDM duplicate checker drain PROCESSED when available.
                 if self.is_edm_duplicate_running():
                     self.set_status("Full cycle: waiting EDM checker to drain PROCESSED...")
+                elif self.edm_enabled:
+                    self.set_status("Full cycle: waiting for EDM checker (toggle ON)...")
+                    self.log_append(
+                        "[CYCLE] EDM toggle ON but checker not running — skipping fallback move."
+                    )
                 else:
                     self.set_status("Full cycle: EDM checker OFF; legacy PROCESSED->CLEAN move...")
                     self.log_append(
-                        "[CYCLE] Warning: EDM duplicate checker is not running. "
-                        "Falling back to direct PROCESSED->CLEAN move."
+                        "[CYCLE] Warning: EDM checker OFF — falling back to direct PROCESSED->CLEAN move."
                     )
                     self._move_processed_to_clean(tag="[CYCLE]")
 
@@ -4008,6 +3965,27 @@ class App(tk.Tk):
     # ─────────────────────────────────────────────────────────────────────────
     # MOVE PROCESSED -> CLEAN
     # ─────────────────────────────────────────────────────────────────────────
+    def _schedule_edm_off_clean_move(self):
+        """Debounce PROCESSED->CLEAN auto-move when EDM toggle is OFF.
+
+        Multiple files can finish in quick succession; the 600ms debounce
+        ensures they are all swept in a single pass rather than one move per file.
+        """
+        if self._edm_off_move_job is not None:
+            try:
+                self.after_cancel(self._edm_off_move_job)
+            except Exception:
+                pass
+        self._edm_off_move_job = self.after(600, self._do_edm_off_clean_move)
+
+    def _do_edm_off_clean_move(self):
+        self._edm_off_move_job = None
+        if self.edm_enabled or self.is_edm_duplicate_running():
+            return
+        moved = self._move_processed_to_clean(tag="[EDM-OFF]")
+        if moved:
+            self._request_count_refresh(0)
+
     def _move_processed_to_clean(self, tag: str = "[AUTO]"):
         """Move all PDFs from PROCESSED to CLEAN for batch prep."""
         config.CLEAN_DIR.mkdir(parents=True, exist_ok=True)
@@ -4146,6 +4124,8 @@ class App(tk.Tk):
         # Start AWB if not running
         if not self.is_awb_running():
             self.start_awb()
+        if self.edm_enabled and not self.is_edm_duplicate_running():
+            self._start_edm_duplicate_checker()
 
         def loop():
             while not self.auto_stop_event.is_set():
@@ -4176,11 +4156,15 @@ class App(tk.Tk):
                     # Step 3: Let EDM duplicate checker drain PROCESSED when available.
                     if self.is_edm_duplicate_running():
                         self._set_auto_phase("Waiting EDM checker drain")
+                    elif self.edm_enabled:
+                        self._set_auto_phase("Waiting EDM checker")
+                        self.log_append(
+                            "[AUTO] EDM toggle ON but checker not running — skipping fallback move."
+                        )
                     else:
                         self._set_auto_phase("Moving PROCESSED -> CLEAN")
                         self.log_append(
-                            "[AUTO] Warning: EDM duplicate checker is not running. "
-                            "Falling back to direct PROCESSED->CLEAN move."
+                            "[AUTO] Warning: EDM checker OFF — falling back to direct PROCESSED->CLEAN move."
                         )
                         self._move_processed_to_clean(tag="[AUTO]")
 
@@ -4220,8 +4204,29 @@ class App(tk.Tk):
                     )
 
                     # Step 5: Batch build
+                    # Log queue depth so the operator can see how full the queue is.
+                    _clean_n   = clean_pdf_count()
+                    _est_batch = _estimate_batch_count()
+                    self.log_append(
+                        f"[AUTO] CLEAN: {_clean_n} file(s)  |  "
+                        f"Est. batches: {_est_batch}  |  "
+                        f"Min required: {MIN_CLEAN_BATCHES_FOR_AUTO}"
+                    )
+                    # Force-batch if the oldest CLEAN file has been waiting too long,
+                    # even if the estimated count is below the minimum threshold.
+                    _oldest_age = _oldest_clean_file_age_seconds()
+                    _force_batch = (
+                        _oldest_age is not None
+                        and _oldest_age >= AUTO_FORCE_BATCH_AGE_SECONDS
+                    )
+                    if _force_batch:
+                        self.log_append(
+                            f"[AUTO] Force-batch: oldest CLEAN file has been waiting "
+                            f"{int(_oldest_age) // 60}m — overriding min-batch threshold."
+                        )
+                    _min_b = 1 if _force_batch else MIN_CLEAN_BATCHES_FOR_AUTO
                     self._set_auto_phase("Batching")
-                    did_batch = self._run_batch_once(tag="[AUTO]", min_batches=MIN_CLEAN_BATCHES_FOR_AUTO)
+                    did_batch = self._run_batch_once(tag="[AUTO]", min_batches=_min_b)
 
                     # Step 6: TIFF conversion (only if batch was built)
                     if did_batch:
@@ -4272,6 +4277,7 @@ class App(tk.Tk):
             return
         self.auto_running = False
         self.auto_stop_event.set()
+        self._stop_edm_duplicate_checker()
         self.btn_auto.config(text="AUTO MODE")
         self._set_auto_phase("Idle")
         self._refresh_live_status()

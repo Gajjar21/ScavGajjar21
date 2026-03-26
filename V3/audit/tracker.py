@@ -449,12 +449,8 @@ def _append_row(sheet_name: str, row: list) -> None:
 
 # ── Read-only: snapshot for stats panel ──────────────────────────────────────
 
-def read_dashboard_stats() -> dict:
-    """Return a flat dict of today's key counts for the UI stats panel.
-
-    Reads WITHOUT acquiring a write lock (safe for display polling).
-    Returns safe defaults if the file is unavailable.
-    """
+def _read_dashboard_stats_once() -> dict | None:
+    """Single attempt to read stats.  Returns None on any exception."""
     defaults = {
         "hot_total": 0, "hot_complete": 0, "hot_review": 0, "hot_failed": 0,
         "edm_clean": 0, "edm_rejected": 0, "edm_partial": 0,
@@ -524,7 +520,30 @@ def read_dashboard_stats() -> dict:
         wb.close()
         return stats
     except Exception:
-        return defaults
+        return None
+
+
+def read_dashboard_stats() -> dict:
+    """Return a flat dict of today's key counts for the UI stats panel.
+
+    Reads WITHOUT acquiring a write lock (safe for display polling).
+    Retries once after a short pause if the first attempt catches a corrupt
+    mid-write snapshot of the xlsx.  Returns safe defaults only as a last resort.
+    """
+    defaults = {
+        "hot_total": 0, "hot_complete": 0, "hot_review": 0, "hot_failed": 0,
+        "edm_clean": 0, "edm_rejected": 0, "edm_partial": 0,
+        "batches_built": 0, "tiffs_converted": 0,
+        "batch_tier_strong": 0, "batch_tier_mix": 0, "batch_tier_weak": 0,
+        "avg_secs": "N/A",
+    }
+    result = _read_dashboard_stats_once()
+    if result is None:
+        # First attempt failed — the file was likely mid-write.  Wait briefly
+        # for the writer to finish, then try once more before giving up.
+        time.sleep(0.15)
+        result = _read_dashboard_stats_once()
+    return result if result is not None else defaults
 
 
 def read_alltime_stats() -> dict:

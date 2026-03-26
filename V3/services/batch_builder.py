@@ -513,9 +513,11 @@ def copy_batches_to_pending_print(
                 status="OK",
             )
             try:
+                _bn_match = re.search(r"_(\d+)\.pdf$", src.name, re.IGNORECASE)
+                _batch_no = int(_bn_match.group(1)) if _bn_match else None
                 write_batch_event(
                     event_type="BATCH_BUILT",
-                    batch_number=None,
+                    batch_number=_batch_no,
                     filename=dst.name,
                     awb_count=awb_count,
                     page_count=page_count,
