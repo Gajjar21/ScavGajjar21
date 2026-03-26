@@ -1,0 +1,15 @@
+# AWB Pipeline V3 — Python Dependencies
+# Install: pip install -r V3/requirements.txt
+
+PyMuPDF>=1.24.0
+Pillow>=10.0.0
+pytesseract>=0.3.10
+openpyxl>=3.1.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+watchdog>=4.0.0
+reportlab>=4.0.0
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+ImageHash>=4.3.0
+rapidfuzz>=3.9.0
