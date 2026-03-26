@@ -71,25 +71,19 @@ def _is_foreign_path(p: Path) -> bool:
 
 
 # ── Base directory ───────────────────────────────────────────────────────────
-BASE_DIR = _PROJECT_ROOT.resolve()
 _base_env = os.getenv("PIPELINE_BASE_DIR", "").strip()
 if _base_env:
     _base_raw = Path(_base_env)
     if _is_foreign_path(_base_raw):
-        print(
-            f"[config] NOTE: PIPELINE_BASE_DIR={_base_raw} is for another OS; "
-            f"forcing BASE_DIR={BASE_DIR}"
-        )
+        BASE_DIR = _PROJECT_ROOT.resolve()
+        print(f"[config] NOTE: PIPELINE_BASE_DIR={_base_raw} is for another OS; using {BASE_DIR}")
+    elif _base_raw.expanduser().exists():
+        BASE_DIR = _base_raw.expanduser().resolve()
     else:
-        try:
-            _base_resolved = _base_raw.expanduser().resolve(strict=False)
-        except Exception:
-            _base_resolved = _base_raw.expanduser()
-        if _base_resolved != BASE_DIR:
-            print(
-                f"[config] NOTE: PIPELINE_BASE_DIR={_base_raw} points outside this project; "
-                f"forcing BASE_DIR={BASE_DIR}"
-            )
+        BASE_DIR = _PROJECT_ROOT.resolve()
+        print(f"[config] NOTE: PIPELINE_BASE_DIR={_base_raw} not found; using {BASE_DIR}")
+else:
+    BASE_DIR = _PROJECT_ROOT.resolve()
 
 # ── Runtime folders ──────────────────────────────────────────────────────────
 ORGANIZER_DIR     = BASE_DIR / "pdf_organizer"
