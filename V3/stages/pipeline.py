@@ -2341,6 +2341,27 @@ def process_pdf(
                         f"Probe-{rot}-{_pt_label}",
                     )
                     return True
+            # ── Probe pool tolerance check (zero OCR cost) ──────────────────
+            # After exact matching on probe text, try full priority (includes
+            # tolerance tiers) against the accumulated pool.  Probe text is
+            # 140 DPI and may have 1-digit OCR errors; tolerance matching can
+            # catch these before spending DPI_STRONG OCR calls.
+            _probe_pool_res = run_full_priority()
+            if _probe_pool_res["status"] == "matched":
+                timings["rotation_ms"] += round((time.perf_counter() - rot_start) * 1000, 1)
+                complete_match(
+                    _probe_pool_res["awb"],
+                    f"Probe-{rot}-Pool-{_probe_pool_res['method']}",
+                    f"Tolerance match from probe pool at {rot}°",
+                )
+                return True
+            if _probe_pool_res["status"] == "tie":
+                timings["rotation_ms"] += round((time.perf_counter() - rot_start) * 1000, 1)
+                send_review(
+                    f"Probe pool tolerance tie at {rot}°: {_probe_pool_res.get('ties', [])[:8]}",
+                    f"Probe-{rot}-Pool",
+                )
+                return True
             # ── end probe pre-check ─────────────────────────────────────────
 
             rimg = get_image(DPI_STRONG, rot)
@@ -2391,6 +2412,12 @@ def process_pdf(
                     return True
                 if psm == 6:
                     _run_rot_invert = not _has_quality_candidates()
+                    # Skip PSM11 if PSM6 already found quality candidates at this
+                    # angle — PSM11 rarely adds new signal when PSM6 extracted the
+                    # same digit strings.  Mirror the Stage 2 skip (line ~1696).
+                    if _has_quality_candidates() and (hr | sr):
+                        log(f"[FAST] Skipping {stage_nm.replace('PSM6', 'PSM11')} — PSM6 found quality candidates at {rot}°")
+                        break
 
             # Rotation soft pass
             txt_rs = get_ocr_text(DPI_STRONG, rot, False, 11)
@@ -2425,6 +2452,26 @@ def process_pdf(
 
             # Angle complete — check budget before starting next angle
             _check_timeout()
+
+            # Inter-angle consensus: if the accumulated pool now has stable HIGH
+            # candidates (3+ stage hits) with NO DB match, remaining angles
+            # will just re-read the same non-DB candidates at different orientations.
+            # Bail now so Stage 5/5.5 (different preprocessing) can run instead.
+            # Mirrors _stable_high_pool_no_db_match() but re-evaluated after each angle.
+            if rotation_order.index(rot) < len(rotation_order) - 1:  # more angles pending
+                _inter_stable_high = {
+                    c for c in running_high
+                    if len(candidate_stage_hits.get(c, set())) >= 3
+                    and not _is_disqualified_candidate(c)
+                    and not _is_likely_date_reference(c)
+                }
+                if _inter_stable_high and not (running_high & awb_set) and not (running_standard & awb_set):
+                    log(
+                        f"[INTER-ANGLE CONSENSUS] Stopping rotation after {rot}° — "
+                        f"{len(_inter_stable_high)} stable HIGH candidate(s) with no DB match; "
+                        f"remaining angles skipped"
+                    )
+                    break
 
         timings["rotation_ms"] += round((time.perf_counter() - rot_start) * 1000, 1)
         return False
@@ -2473,13 +2520,17 @@ def process_pdf(
                 return "MATCHED"
         else:
             if _angle_certainty == "CERTAIN":
-                # CERTAIN rotated docs: prioritize the highest-yield rescue
-                # paths first, then fall back to full rotation passes.
-                if ENABLE_UPSCALED_RESCUE_PASS and _run_upscale_rescue():
-                    return "MATCHED"
+                # CERTAIN rotated docs: table first, then targeted rotation, then upscale.
+                # Table (PSM3) always runs to completion regardless of budget (2-8s max),
+                # catches layout-heavy docs (CI, invoices) before spending a full
+                # rotation angle (which fires _check_timeout at angle boundary and can
+                # cost 20-35s for large docs even when only 1 angle is attempted).
+                # Rotation at base_angle runs second — still targeted (1 angle only).
                 if _run_table_pass():
                     return "MATCHED"
                 if _run_rotation_passes():
+                    return "MATCHED"
+                if ENABLE_UPSCALED_RESCUE_PASS and _run_upscale_rescue():
                     return "MATCHED"
             elif _angle_certainty == "UNCERTAIN":
                 # ROTATED UNCERTAIN: table first, then rotation.
