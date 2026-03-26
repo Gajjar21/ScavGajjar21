@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import copy
 import csv
 import hashlib
 import io
@@ -22,6 +23,7 @@ import os
 import re
 import shutil
 import sys
+import threading
 import time
 import uuid
 import zipfile
@@ -75,8 +77,10 @@ OPERATING_COMPANY = config.EDM_OPERATING_COMPANY
 METADATA_URL = config.EDM_METADATA_URL
 DOWNLOAD_URL = config.EDM_DOWNLOAD_URL
 
-FILE_SETTLE_SECONDS = config.FILE_SETTLE_SECONDS
+FILE_SETTLE_SECONDS = getattr(config, "EDM_FILE_SETTLE_SECONDS", 1)
+EDM_WORKER_THREADS  = max(1, int(getattr(config, "EDM_WORKER_THREADS", 3)))
 TEXT_SIMILARITY_THRESHOLD = config.TEXT_SIMILARITY_THRESHOLD
+TEXT_STRONG_THRESHOLD = config.TEXT_STRONG_THRESHOLD
 PHASH_THRESHOLD = config.PHASH_THRESHOLD
 PAGE_OCR_LIMIT = config.PAGE_OCR_LIMIT
 OCR_COMPARE_LIMIT = config.EDM_OCR_COMPARE_LIMIT
@@ -128,28 +132,48 @@ def _build_logger() -> logging.Logger:
 log = _build_logger()
 
 
-# -- small shared caches -------------------------------------------------------
-_AWB_SESSION_CACHE: dict[str, Any] = {
-    "awb": None,
-    "doc_ids": None,
-    "edm_pdf_list": None,
-    "edm_fingerprints": None,
-    "edm_ocr_cache": None,
-}
+# -- thread-safe multi-AWB cache -----------------------------------------------
+# Each AWB gets its own slot so parallel workers never stomp each other.
+# Keys: awb str → {doc_ids, edm_pdf_list, edm_fingerprints, edm_ocr_cache}
+_AWB_CACHE_LOCK = threading.Lock()
+_AWB_CACHE: dict[str, dict] = {}
+_AWB_CACHE_MAX = 8  # cap to prevent unbounded growth
 
 
-def _clear_awb_cache(reason: str = "") -> None:
-    prev = _AWB_SESSION_CACHE.get("awb")
-    if prev:
-        if reason:
-            log.info("[CACHE] Clearing AWB cache for %s: %s", prev, reason)
-        else:
-            log.info("[CACHE] Clearing AWB cache for %s", prev)
-    _AWB_SESSION_CACHE["awb"] = None
-    _AWB_SESSION_CACHE["doc_ids"] = None
-    _AWB_SESSION_CACHE["edm_pdf_list"] = None
-    _AWB_SESSION_CACHE["edm_fingerprints"] = None
-    _AWB_SESSION_CACHE["edm_ocr_cache"] = None
+def _cache_get(awb: str) -> dict | None:
+    with _AWB_CACHE_LOCK:
+        entry = _AWB_CACHE.get(awb)
+        return dict(entry) if entry is not None else None
+
+
+def _cache_put(awb: str, entry: dict) -> None:
+    with _AWB_CACHE_LOCK:
+        _AWB_CACHE[awb] = copy.deepcopy(entry)   # deep-copy: workers never share mutable refs
+        if len(_AWB_CACHE) > _AWB_CACHE_MAX:
+            oldest = next(iter(_AWB_CACHE))
+            del _AWB_CACHE[oldest]
+
+
+# -- per-AWB serialization lock ------------------------------------------------
+# Prevents two workers processing files with the same AWB number simultaneously
+# (double-download, cache stomp, or double-routing).
+_awb_locks: dict[str, threading.Lock] = {}
+_awb_locks_meta = threading.Lock()
+
+
+def _get_awb_lock(awb: str) -> threading.Lock:
+    with _awb_locks_meta:
+        if awb not in _awb_locks:
+            _awb_locks[awb] = threading.Lock()
+        return _awb_locks[awb]
+
+
+# -- CSV write lock ------------------------------------------------------------
+_csv_lock = threading.Lock()
+
+
+# -- file-processing thread pool -----------------------------------------------
+_executor: ThreadPoolExecutor | None = None
 
 
 # -- utility helpers -----------------------------------------------------------
@@ -169,15 +193,16 @@ def _awb_from_processed_filename(filename: str) -> str | None:
 def _append_to_csv(filename: str) -> None:
     awb = _awb_from_processed_filename(filename) or ""
     CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-    new_file = not CSV_PATH.exists()
-    try:
-        with open(CSV_PATH, "a", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            if new_file:
-                w.writerow(["AWB", "SourceFile", "Timestamp"])
-            w.writerow([awb, filename, datetime.now().isoformat(timespec="seconds")])
-    except Exception as e:
-        log.warning("[CSV] Could not write to awb_list.csv: %s", e)
+    with _csv_lock:
+        new_file = not CSV_PATH.exists()
+        try:
+            with open(CSV_PATH, "a", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                if new_file:
+                    w.writerow(["AWB", "SourceFile", "Timestamp"])
+                w.writerow([awb, filename, datetime.now().isoformat(timespec="seconds")])
+        except Exception as e:
+            log.warning("[CSV] Could not write to awb_list.csv: %s", e)
 
 
 def _file_md5(path: str) -> str | None:
@@ -776,16 +801,21 @@ def page_is_cargo_control_document(page: Any) -> bool:
 
 
 def _rejection_confidence(method_counts: dict[str, int]) -> str:
-    h = int(method_counts.get("HASH", 0))
-    p = int(method_counts.get("PHASH", 0))
-    t = int(method_counts.get("TEXT", 0))
-    o = int(method_counts.get("OCR", 0))
+    h  = int(method_counts.get("HASH", 0))
+    p  = int(method_counts.get("PHASH", 0))
+    t  = int(method_counts.get("TEXT", 0))
+    ts = int(method_counts.get("TEXT_STRONG", 0))  # TEXT score >= TEXT_STRONG_THRESHOLD
+    o  = int(method_counts.get("OCR", 0))
 
     if h >= 1:
         return "HIGH"
-    if p >= 2 and (t + o) >= 1:
+    if p >= 2 and (t + ts + o) >= 1:
+        return "HIGH"
+    if ts >= 2:
         return "HIGH"
     if p >= 3:
+        return "MEDIUM"
+    if ts >= 1:
         return "MEDIUM"
     if (t + o) >= 3 and p >= 1:
         return "MEDIUM"
@@ -1078,11 +1108,17 @@ def find_duplicate_pages(
                         edm_hash_index_tier2.setdefault(h, []).append((doc_idx, ei))
 
         # CCD all-pages bypass: avoids false rejects for stamped CCD docs.
-        all_ccd = True
-        for ii in range(total_incoming):
-            if not inc_is_ccd(ii):
-                all_ccd = False
-                break
+        # Fast pre-check: if page 0 is NOT CCD, skip the full scan entirely
+        # (the vast majority of files). Only run the full scan if page 0 IS CCD
+        # to avoid calling Tesseract per page on large scan-only non-CCD docs.
+        if total_incoming > 0 and not inc_is_ccd(0):
+            all_ccd = False
+        else:
+            all_ccd = True
+            for ii in range(total_incoming):
+                if not inc_is_ccd(ii):
+                    all_ccd = False
+                    break
         if all_ccd:
             return duplicate_pages, {
                 "tier1_hit": False,
@@ -1330,14 +1366,16 @@ def find_duplicate_pages(
 
                     score = text_similarity(in_text, ed_text)
                     if score >= TEXT_SIMILARITY_THRESHOLD:
+                        method = "TEXT_STRONG" if score >= TEXT_STRONG_THRESHOLD else "TEXT"
                         log.info(
-                            "    EDM %s: DUPLICATE TEXT incoming p%s vs EDM p%s (score=%.1f)",
+                            "    EDM %s: DUPLICATE %s incoming p%s vs EDM p%s (score=%.1f)",
                             doc_idx + 1,
+                            method,
                             ii + 1,
                             ei + 1,
                             score,
                         )
-                        mark_duplicate(ii, doc_idx, "TEXT", f"score={score:.1f}")
+                        mark_duplicate(ii, doc_idx, method, f"score={score:.1f}")
                         break
                 if ii in duplicate_pages:
                     break
@@ -1538,11 +1576,27 @@ def process_file(filepath: str) -> None:
     filename = os.path.basename(filepath)
     awb = (_awb_from_processed_filename(filename) or "").strip()
 
-    cache_state = "MISS"
-
     log.info("=" * 55)
     log.info("File:  %s", filename)
     log.info("AWB:   %s", awb or "<invalid>")
+
+    # Serialize processing of the same AWB across parallel workers.
+    # Prevents double EDM download, cache stomp, and double-routing.
+    if awb:
+        _awb_lock = _get_awb_lock(awb)
+        _awb_lock.acquire()
+    else:
+        _awb_lock = None
+
+    try:
+        _process_file_inner(filepath, filename, awb, total_start)
+    finally:
+        if _awb_lock is not None:
+            _awb_lock.release()
+
+
+def _process_file_inner(filepath: str, filename: str, awb: str, total_start: float) -> None:
+    cache_state = "MISS"
 
     # Invalid AWB name format: pass through unchecked.
     if not awb:
@@ -1565,10 +1619,6 @@ def process_file(filepath: str) -> None:
             route="CLEAN",
         )
         return
-
-    # Keep cache only for active AWB.
-    if _AWB_SESSION_CACHE["awb"] and _AWB_SESSION_CACHE["awb"] != awb:
-        _clear_awb_cache("switching to new AWB")
 
     if not is_edm_enabled():
         log.info("EDM toggle is OFF; bypassing EDM calls")
@@ -1613,21 +1663,16 @@ def process_file(filepath: str) -> None:
         )
         return
 
-    # Cache hit for repeated same-AWB docs in a run.
-    cache_ready = (
-        _AWB_SESSION_CACHE["awb"] == awb
-        and _AWB_SESSION_CACHE["doc_ids"] is not None
-        and _AWB_SESSION_CACHE["edm_pdf_list"] is not None
-        and _AWB_SESSION_CACHE["edm_fingerprints"] is not None
-        and _AWB_SESSION_CACHE["edm_ocr_cache"] is not None
-    )
+    # Cache hit for repeated same-AWB docs in a run (thread-safe per-AWB slots).
+    _cached = _cache_get(awb)
+    cache_ready = _cached is not None
 
     if cache_ready:
         cache_state = "HIT"
-        doc_ids = list(_AWB_SESSION_CACHE["doc_ids"])
-        edm_pdf_list = list(_AWB_SESSION_CACHE["edm_pdf_list"])
-        edm_fingerprints = list(_AWB_SESSION_CACHE["edm_fingerprints"])
-        edm_ocr_cache = dict(_AWB_SESSION_CACHE["edm_ocr_cache"])
+        doc_ids          = list(_cached["doc_ids"])
+        edm_pdf_list     = list(_cached["edm_pdf_list"])
+        edm_fingerprints = list(_cached["edm_fingerprints"])
+        edm_ocr_cache    = dict(_cached["edm_ocr_cache"])
         log.info("[CACHE] AWB cache hit for %s", awb)
     else:
         cache_state = "MISS"
@@ -1655,11 +1700,7 @@ def process_file(filepath: str) -> None:
             return
 
         if not doc_ids:
-            _AWB_SESSION_CACHE["awb"] = awb
-            _AWB_SESSION_CACHE["doc_ids"] = []
-            _AWB_SESSION_CACHE["edm_pdf_list"] = []
-            _AWB_SESSION_CACHE["edm_fingerprints"] = []
-            _AWB_SESSION_CACHE["edm_ocr_cache"] = {}
+            _cache_put(awb, {"doc_ids": [], "edm_pdf_list": [], "edm_fingerprints": [], "edm_ocr_cache": {}})
             edm_pdf_list = []
             edm_fingerprints = []
             edm_ocr_cache = {}
@@ -1714,11 +1755,12 @@ def process_file(filepath: str) -> None:
                 text_page_limit=0,
             )
             edm_ocr_cache = {}
-            _AWB_SESSION_CACHE["awb"] = awb
-            _AWB_SESSION_CACHE["doc_ids"] = list(doc_ids)
-            _AWB_SESSION_CACHE["edm_pdf_list"] = list(edm_pdf_list)
-            _AWB_SESSION_CACHE["edm_fingerprints"] = list(edm_fingerprints)
-            _AWB_SESSION_CACHE["edm_ocr_cache"] = dict(edm_ocr_cache)
+            _cache_put(awb, {
+                "doc_ids": list(doc_ids),
+                "edm_pdf_list": list(edm_pdf_list),
+                "edm_fingerprints": list(edm_fingerprints),
+                "edm_ocr_cache": dict(edm_ocr_cache),
+            })
             log.info("[CACHE] Cached EDM snapshot for %s (%s PDFs)", awb, len(edm_pdf_list))
 
     if not doc_ids:
@@ -1750,8 +1792,12 @@ def process_file(filepath: str) -> None:
     )
 
     # Persist warmed OCR cache for later same-AWB files in this session.
-    _AWB_SESSION_CACHE["edm_fingerprints"] = list(edm_fingerprints)
-    _AWB_SESSION_CACHE["edm_ocr_cache"] = dict(edm_ocr_cache)
+    _cache_put(awb, {
+        "doc_ids": list(doc_ids),
+        "edm_pdf_list": list(edm_pdf_list),
+        "edm_fingerprints": list(edm_fingerprints),
+        "edm_ocr_cache": dict(edm_ocr_cache),
+    })
 
     try:
         incoming_doc = fitz.open(filepath)
@@ -1766,7 +1812,7 @@ def process_file(filepath: str) -> None:
     # Conservative guard:
     # Use HASH/PHASH pages only for automatic reject/split decisions.
     # TEXT/OCR-only similarity is treated as non-destructive (no auto reject).
-    strong_methods = {"HASH", "PHASH"}
+    strong_methods = {"HASH", "PHASH", "TEXT_STRONG"}
     page_details = dict(compare_meta.get("page_details", {}))
     strong_duplicate_pages = {
         int(page_no) - 1
@@ -1991,38 +2037,49 @@ def process_file(filepath: str) -> None:
 
 
 # -- watchdog ------------------------------------------------------------------
+def _settle_and_process(filepath: str) -> None:
+    """Settle-wait + process in a worker thread (off the watchdog event thread)."""
+    filename = os.path.basename(filepath)
+    time.sleep(FILE_SETTLE_SECONDS)
+    if not os.path.exists(filepath):
+        log.warning("File gone before processing: %s", filename)
+        return
+    if not file_is_stable(filepath):
+        log.warning("File not yet stable; skipping this event: %s", filename)
+        return
+    try:
+        process_file(filepath)
+    except Exception as e:
+        log.error("Unexpected error on %s: %s", filename, e)
+
+
 class ProcessedPDFHandler(FileSystemEventHandler):
     def __init__(self) -> None:
         self._last_seen: dict[str, float] = {}
+        self._seen_lock = threading.Lock()
 
     def _handle(self, path: str) -> None:
         if not str(path).lower().endswith(".pdf"):
             return
 
         filepath = str(path)
-        filename = os.path.basename(filepath)
-
         now = time.time()
         # Debounce duplicate FS notifications (create+modify bursts, move events).
-        if now - self._last_seen.get(filepath, 0.0) < 0.8:
-            return
-        self._last_seen[filepath] = now
+        # Lock protects the read-modify-write so two watchdog threads can't both
+        # pass the debounce check for the same file.
+        with self._seen_lock:
+            if now - self._last_seen.get(filepath, 0.0) < 0.8:
+                return
+            self._last_seen[filepath] = now
 
-        log.info("New/updated file detected: %s", filename)
+        log.info("New/updated file detected: %s", os.path.basename(filepath))
 
-        time.sleep(FILE_SETTLE_SECONDS)
-        if not os.path.exists(filepath):
-            log.warning("File gone before processing: %s", filename)
-            return
-
-        if not file_is_stable(filepath):
-            log.warning("File not yet stable; skipping this event: %s", filename)
-            return
-
-        try:
-            process_file(filepath)
-        except Exception as e:
-            log.error("Unexpected error on %s: %s", filename, e)
+        # Offload settle-wait + processing to the thread pool so the watchdog
+        # event thread is never blocked and multiple files process in parallel.
+        if _executor is not None:
+            _executor.submit(_settle_and_process, filepath)
+        else:
+            _settle_and_process(filepath)
 
     def on_created(self, event):
         if event.is_directory:
@@ -2041,6 +2098,7 @@ class ProcessedPDFHandler(FileSystemEventHandler):
 
 
 def main() -> None:
+    global _executor
     config.ensure_dirs()
 
     if requests is None:
@@ -2051,6 +2109,18 @@ def main() -> None:
     log.info("CLEAN:     %s", CLEAN_FOLDER)
     log.info("REJECTED:  %s", REJECTED_FOLDER)
     log.info("NEEDS_REVIEW: %s", NEEDS_REVIEW_FOLDER)
+    # Cap total Tesseract concurrency: with multiple file workers each spawning
+    # OCR sub-threads, we'd get EDM_WORKER_THREADS × EDM_OCR_WORKERS simultaneous
+    # Tesseract processes causing CPU thrash. Cap OCR workers to 1 when more than
+    # one file worker is active, keeping total Tesseract calls = EDM_WORKER_THREADS.
+    global EDM_OCR_WORKERS
+    if EDM_WORKER_THREADS >= 2:
+        EDM_OCR_WORKERS = 1
+
+    log.info(
+        "Workers:   %s  |  Settle: %ss  |  OCR sub-threads: %s",
+        EDM_WORKER_THREADS, FILE_SETTLE_SECONDS, EDM_OCR_WORKERS,
+    )
     log.info(
         "Tier1: incoming p1-%s vs EDM p1-%s (hash+pHash only)",
         TIER1_INCOMING_PAGES,
@@ -2062,17 +2132,25 @@ def main() -> None:
         TEXT_LAYER_MIN_CHARS,
     )
 
+    _executor = ThreadPoolExecutor(
+        max_workers=EDM_WORKER_THREADS,
+        thread_name_prefix="edm-worker",
+    )
+
     existing = [f for f in PROCESSED_FOLDER.iterdir() if f.suffix.lower() == ".pdf"]
     if existing:
         log.info("Found %s existing file(s); processing now", len(existing))
+        futs = []
         for fp in existing:
             if not file_is_stable(str(fp)):
                 log.warning("Skipping unstable startup file: %s", fp.name)
                 continue
+            futs.append(_executor.submit(process_file, str(fp)))
+        for fut in as_completed(futs):
             try:
-                process_file(str(fp))
+                fut.result()
             except Exception as e:
-                log.error("Error on %s: %s", fp.name, e)
+                log.error("Error processing startup file: %s", e)
 
     observer = Observer()
     observer.schedule(ProcessedPDFHandler(), str(PROCESSED_FOLDER), recursive=False)
@@ -2086,6 +2164,8 @@ def main() -> None:
         observer.stop()
 
     observer.join()
+    _executor.shutdown(wait=True)
+    _executor = None
     log.info("EDM Duplicate Checker V3 stopped")
 
 

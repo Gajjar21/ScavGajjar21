@@ -31,8 +31,8 @@ from openpyxl.utils import get_column_letter
 # ── Constants ─────────────────────────────────────────────────────────────────
 _AUDIT_XLSX  = config.AUDIT_XLSX_PATH
 _LOCK_FILE   = config.DATA_DIR / "pipeline_audit.lock"
-_LOCK_TIMEOUT = 15   # seconds to wait before declaring timeout
-_LOCK_STALE   = 30   # seconds before an unclaimed lock is considered stale
+_LOCK_TIMEOUT = 30   # seconds to wait before declaring timeout (raised from 15 for parallel EDM workers)
+_LOCK_STALE   = 60   # seconds before an unclaimed lock is considered stale
 
 SHEET_HOT   = "HotfolderV2"
 SHEET_EDM   = "EDM"
