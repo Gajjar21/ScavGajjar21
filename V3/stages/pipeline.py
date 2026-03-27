@@ -395,6 +395,7 @@ def process_pdf(
     timings: Dict[str, float] = {
         "filename_ms": 0.0,
         "text_layer_ms": 0.0,
+        "pre_stage2_ms": 0.0,
         "ocr_main_ms": 0.0,
         "ocr_strong_ms": 0.0,
         "ocr_context_ms": 0.0,
@@ -462,6 +463,7 @@ def process_pdf(
         log(
             f"[TIMING] file={name} method={match_method} route={route} "
             f"filename_ms={timings['filename_ms']} text_layer_ms={timings['text_layer_ms']} "
+            f"pre_stage2_ms={timings['pre_stage2_ms']} "
             f"ocr_main_ms={timings['ocr_main_ms']} ocr_strong_ms={timings['ocr_strong_ms']} "
             f"ocr_context_ms={timings['ocr_context_ms']} rotation_ms={timings['rotation_ms']} "
             f"total_active_ms={timings['total_active_ms']}"
@@ -1661,6 +1663,7 @@ def process_pdf(
         # =================================================================
         # STAGE 2 — OCR MAIN
         # =================================================================
+        timings["pre_stage2_ms"] = round((time.perf_counter() - start_ts) * 1000, 1)
         main_start = time.perf_counter()
         if (not allow_long_pass) and _scan_profile_image_only:
             _fastlane_ocr_budget_start = main_start
