@@ -106,7 +106,9 @@ STAGE_CACHE_CSV       = DATA_DIR / "stage_cache.csv"
 PIPELINE_SUMMARY_CSV  = DATA_DIR / "pipeline_summary.csv"
 EDM_AWB_EXISTS_CACHE  = DATA_DIR / "edm_awb_exists_cache.json"
 EDM_TOGGLE_FILE       = DATA_DIR / "edm_toggle.json"
-AWB_RELOAD_TRIGGER    = DATA_DIR / "reload_awb.trigger"
+AWB_RELOAD_TRIGGER        = DATA_DIR / "reload_awb.trigger"
+PIPELINE_ATTEMPT_COUNTS   = DATA_DIR / "pipeline_attempt_counts.json"
+MAX_PIPELINE_ATTEMPTS     = _int("MAX_PIPELINE_ATTEMPTS", 3)
 
 # ── Logs ─────────────────────────────────────────────────────────────────────
 LOG_DIR      = BASE_DIR / "logs"

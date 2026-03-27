@@ -161,6 +161,48 @@ def _check_reload_trigger() -> bool:
     return False
 
 
+# ── Per-file attempt counter (persists across hotfolder restarts) ─────────────
+_ATTEMPT_COUNTS_PATH  = config.PIPELINE_ATTEMPT_COUNTS
+_MAX_PIPELINE_ATTEMPTS = config.MAX_PIPELINE_ATTEMPTS
+
+
+def _load_attempt_counts() -> dict:
+    try:
+        if _ATTEMPT_COUNTS_PATH.exists():
+            return json.loads(_ATTEMPT_COUNTS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def _save_attempt_counts(counts: dict) -> None:
+    try:
+        _ATTEMPT_COUNTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _ATTEMPT_COUNTS_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(counts, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(_ATTEMPT_COUNTS_PATH)
+    except Exception as e:
+        log(f"[ATTEMPT-COUNTER] Could not save counts: {e}")
+
+
+def _increment_attempt(filename: str) -> int:
+    counts = _load_attempt_counts()
+    counts[filename] = counts.get(filename, 0) + 1
+    _save_attempt_counts(counts)
+    return counts[filename]
+
+
+def _get_attempt_count(filename: str) -> int:
+    return _load_attempt_counts().get(filename, 0)
+
+
+def _clear_attempt_count(filename: str) -> None:
+    counts = _load_attempt_counts()
+    if filename in counts:
+        counts.pop(filename)
+        _save_attempt_counts(counts)
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # MAIN LOOP
 # ═════════════════════════════════════════════════════════════════════════════
@@ -285,6 +327,18 @@ def main() -> None:
                                     handler._enqueue(str(fn))
                     except Exception as e:
                         log(f"Rescan warning: {e}")
+                    # Prune stale attempt counts (keep only current INBOX files)
+                    try:
+                        _counts = _load_attempt_counts()
+                        if len(_counts) > 500:
+                            _inbox_names = {
+                                f.name for f in INBOX_DIR.iterdir()
+                                if f.suffix.lower() == ".pdf"
+                            }
+                            _pruned = {k: v for k, v in _counts.items() if k in _inbox_names}
+                            _save_attempt_counts(_pruned)
+                    except Exception:
+                        pass
                     last_rescan = now
 
                 processed_any = False
@@ -344,6 +398,24 @@ def main() -> None:
                         _file_proc_seconds.pop(path, None)
                         processed_any = True
                         continue
+                    # Hard-failure cap: route to NEEDS_REVIEW after too many
+                    # full-pipeline attempts without a match.
+                    _basename = os.path.basename(path)
+                    if _get_attempt_count(_basename) >= _MAX_PIPELINE_ATTEMPTS:
+                        log(
+                            f"[ATTEMPT-CAP] {_basename} reached max attempts "
+                            f"({_MAX_PIPELINE_ATTEMPTS}) — routing to NEEDS_REVIEW"
+                        )
+                        try:
+                            safe_move(path, config.NEEDS_REVIEW_DIR)
+                            _clear_attempt_count(_basename)
+                        except Exception as _e:
+                            log(f"[ATTEMPT-CAP] Could not move {_basename}: {_e}")
+                        _file_proc_seconds.pop(path, None)
+                        processed_any = True
+                        continue
+                    _increment_attempt(_basename)
+
                     if ENABLE_INBOX_TWO_PASS:
                         _t0 = time.perf_counter()
                         result = process_pdf(
@@ -356,6 +428,7 @@ def main() -> None:
                             if path not in timeout_deferred_state and path not in deferred_long_pass:
                                 deferred_long_pass.append(path)
                         elif not os.path.exists(path):
+                            _clear_attempt_count(_basename)
                             _file_proc_seconds.pop(path, None)
                     else:
                         _t0 = time.perf_counter()

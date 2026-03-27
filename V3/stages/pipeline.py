@@ -851,6 +851,15 @@ def process_pdf(
             return hard_budget
         return budget
 
+    def _fastlane_budget_remaining() -> float:
+        """Return seconds still available in the fast-lane OCR budget (negative = over budget)."""
+        if allow_long_pass or not _scan_profile_image_only:
+            return 999.0
+        if _fastlane_ocr_budget_start is None:
+            return 999.0
+        elapsed = time.perf_counter() - _fastlane_ocr_budget_start
+        return _effective_fastlane_budget_seconds() - elapsed
+
     def _run_fastlane_certain_rotation_rescue_lite(reason_tag: str = "CertainRot") -> bool:
         """Quick rescue-lite for CERTAIN rotated scan-profile docs.
 
@@ -1911,6 +1920,26 @@ def process_pdf(
             if _run_fastlane_single_rotated_pass_before_defer(reason_tag="Stage3Exit"):
                 return "MATCHED"
 
+            # Budget-fill retry: if meaningful budget remains after Stage 3 and
+            # we still have no quality candidates, attempt one more rotated pass
+            # rather than burning the long-pass slot for something solvable here.
+            _remaining = _fastlane_budget_remaining()
+            if (
+                _remaining > 4.0
+                and not _has_quality_candidates()
+                and _scan_profile_image_only
+                and not _fastlane_rotated_pass_attempted
+            ):
+                log(
+                    f"[FAST-LANE] {_remaining:.1f}s budget remains — "
+                    f"budget-fill rotated pass before defer: {name}"
+                )
+                if _run_fastlane_single_rotated_pass_before_defer(
+                    reason_tag="BudgetFill",
+                    include_invert=True,
+                ):
+                    return "MATCHED"
+
             # Fast catch path:
             # If this is image-only and Stage 0-3 found no candidates at all,
             # mark as urgent defer so long-pass can pick it up immediately
@@ -2519,25 +2548,47 @@ def process_pdf(
 
     _skip_rotation = _stable_high_pool_no_db_match()
 
+    # Skip PSM3 table rescue when confidence is high enough that table-layout
+    # preprocessing adds no signal:
+    #   CERTAIN rotation: AWB is at a known non-zero angle — PSM3 on the
+    #     base-angle image sees distorted text.  Skip only when we already have
+    #     quality candidates (cold-start files with no candidates still need it).
+    #   UPRIGHT with stable non-DB pool: same reasoning as _skip_rotation —
+    #     the same candidates keep reappearing without a DB hit, table won't add new ones.
+    _skip_table = (
+        (
+            _angle_certainty == "CERTAIN"
+            and _margin >= ROTATION_PROBE_CERTAIN_MARGIN
+            and _has_quality_candidates()
+        )
+        or (
+            _route == "UPRIGHT"
+            and _skip_rotation
+        )
+    )
+    if _skip_table:
+        log(
+            f"[TABLE-SKIP] Skipping PSM3 table rescue "
+            f"(certainty={_angle_certainty}, route={_route}, margin={_margin:.0f})"
+        )
+
     try:
         # Execute routes
         if _route == "UPRIGHT":
             # Stage 5.5 -> 5 -> 4 (last resort, skipped on stable non-DB pool)
             if ENABLE_UPSCALED_RESCUE_PASS and _run_upscale_rescue():
                 return "MATCHED"
-            if _run_table_pass():
+            if not _skip_table and _run_table_pass():
                 return "MATCHED"
             if not _skip_rotation and _run_rotation_passes():
                 return "MATCHED"
         else:
             if _angle_certainty == "CERTAIN":
-                # CERTAIN rotated docs: table first, then targeted rotation, then upscale.
-                # Table (PSM3) always runs to completion regardless of budget (2-8s max),
-                # catches layout-heavy docs (CI, invoices) before spending a full
-                # rotation angle (which fires _check_timeout at angle boundary and can
-                # cost 20-35s for large docs even when only 1 angle is attempted).
-                # Rotation at base_angle runs second — still targeted (1 angle only).
-                if _run_table_pass():
+                # CERTAIN rotated docs: rotation first (targeted 1 angle), then upscale.
+                # Table (PSM3) is skipped when we have quality candidates — AWB is at a
+                # known non-zero angle so PSM3 on the base-angle image adds no signal.
+                # Falls back to table when no candidates exist (cold-start safety net).
+                if not _skip_table and _run_table_pass():
                     return "MATCHED"
                 if _run_rotation_passes():
                     return "MATCHED"
