@@ -1,9 +1,9 @@
 # V3/ui/app_window.py
-# AWB Pipeline V3 — Main Application Window
+# ScavGajjar V3 — Main Application Window
 #
 # Fully self-contained Tkinter UI with:
 #   - Employee login dialog
-#   - Start/Stop AWB, EDM toggle, Prepare Batch, Full Cycle, Auto Mode
+#   - Start/Stop Scan, EDM toggle, Prepare Batch, Full Cycle, Auto Mode
 #   - Folder shortcuts, live status strip, folder counts, stats panel
 #   - Colour-coded log viewer with line cap
 #   - Animated progress indicator
@@ -263,7 +263,7 @@ class _LabelBtn(tk.Frame):
 
     def __init__(self, parent, text, cmd, bg, fg, hover_bg,
                  font, padx, pady, width=0, image=None, compound="left"):
-        super().__init__(parent, bg=bg, cursor="hand2")
+        super().__init__(parent, bg=bg, cursor="right_ptr")
         self._bg       = bg
         self._fg       = fg
         self._hover_bg = hover_bg
@@ -326,7 +326,7 @@ class _LabelBtn(tk.Frame):
             self._disabled = (state == "disabled")
             alpha = "#aaaaaa"
             self._lbl.configure(fg=alpha if self._disabled else self._fg)
-            super().configure(cursor="arrow" if self._disabled else "hand2")
+            super().configure(cursor="arrow" if self._disabled else "right_ptr")
         if kw:
             try:
                 super().configure(**kw)
@@ -341,11 +341,11 @@ class _LabelBtn(tk.Frame):
 # ═════════════════════════════════════════════════════════════════════════════
 
 class App(tk.Tk):
-    """AWB Pipeline V3 — Control Centre."""
+    """ScavGajjar V3 — Control Centre."""
 
     def __init__(self):
         super().__init__()
-        self.title("AWB Pipeline V3 \u2014 Control Centre")
+        self.title("ScavGajjar V3 \u2014 Control Centre")
         self.geometry("1440x900")
         self.minsize(1100, 700)
         self.configure(bg=APP_BG)
@@ -419,7 +419,7 @@ class App(tk.Tk):
         self._initialize_session_audit_tail()
         self._initialize_session_stats_baseline()
 
-        self.log_append("  AWB Pipeline V3  |  INBOX -> [AWB] -> PROCESSED -> CLEAN/REJECTED -> [Batch] -> OUT")
+        self.log_append("  ScavGajjar V3  |  INBOX -> [AWB] -> PROCESSED -> CLEAN/REJECTED -> [Batch] -> OUT")
         self.log_append(f"  Base: {config.BASE_DIR}")
         self.log_append(f"  Protected: {config.AWB_EXCEL_PATH.name}  |  {config.AWB_LOGS_PATH.name}")
         self.log_append(
@@ -611,7 +611,8 @@ class App(tk.Tk):
         # ── Global actions menu  (overflow items not already available on main UI)
         self._global_actions_menu = tk.Menu(self, tearoff=0)
         self._global_actions_menu.add_command(label="Open LOGS",             command=lambda: self.open_folder(config.LOG_DIR))
-        self._global_actions_menu.add_command(label="Open Audit Log",        command=lambda: self._open_file(config.AUDIT_LOG))
+        self._global_actions_menu.add_command(label="Open Audit Log (JSONL)",command=lambda: self._open_file(config.AUDIT_LOG))
+        self._global_actions_menu.add_command(label="Open Audit Workbook",   command=lambda: self._open_file(config.AUDIT_XLSX_PATH))
         self._global_actions_menu.add_command(label="Open EDM Log",          command=lambda: self._open_file(config.EDM_LOG))
         self._global_actions_menu.add_command(label="Open Sequence Workbook",command=lambda: self._open_file(config.SEQUENCE_XLSX))
         self._global_actions_menu.add_command(label="Export Activity Feed",   command=self._export_log)
@@ -663,7 +664,7 @@ class App(tk.Tk):
 
         # Right: employee + clock
         right_hdr = tk.Frame(hdr, bg=HEADER_BG)
-        right_hdr.pack(side="right", padx=18, fill="y", pady=12)
+        right_hdr.pack(side="right", padx=(12, 26), fill="y", pady=12)
         self.lbl_employee = tk.Label(
             right_hdr, text="Employee: —",
             font=(FONT_LABEL[0], FONT_LABEL[1], "bold"),
@@ -721,7 +722,7 @@ class App(tk.Tk):
         row1_actions.pack(side="left")
 
         self.btn_get_awb = _btn(
-            row1_actions, "Start AWB", self.on_toggle_get_awb,
+            row1_actions, "Start Scan", self.on_toggle_get_awb,
             width=0, bg="#4a33a2", fg="white", height=2, padx=14, pady=8, font=FONT_BTN,
         )
         self.btn_auto = _btn(
@@ -863,7 +864,8 @@ class App(tk.Tk):
         )
         self.lbl_status_strip.pack(side="left", fill="x")
 
-        tiles_frame = tk.Frame(snap, bg=PANEL_BG)
+        # Separator colour shows through the 1px inter-tile gap
+        tiles_frame = tk.Frame(snap, bg="#bfcfe0")
         tiles_frame.pack(fill="x", padx=6, pady=(4, 4))
         for _ci in range(7):
             tiles_frame.columnconfigure(_ci, weight=1, uniform="snapshot")
@@ -871,11 +873,19 @@ class App(tk.Tk):
 
         def _count_tile(parent, row, col, label, click_cmd=None):
             """Return the count label for a metric tile."""
+            _ACC_IDLE  = "#b8d0ea"
+            _ACC_HOVER = "#3d7fcb"
+            _HOVER_BG  = "#e6f0ff"
+            _PRESS_BG  = "#d2e4f8"
+
+            # 1px right gap (except last col) exposes tiles_frame bg as separator
             tile = tk.Frame(parent, bg=PANEL_BG, cursor="arrow")
-            tile.grid(row=row, column=col, padx=0, pady=0, sticky="nsew")
+            tile.grid(row=row, column=col,
+                      padx=(0, 1 if col < 6 else 0), pady=0, sticky="nsew")
             tile.grid_propagate(False)
 
-            accent = tk.Frame(tile, bg="#d8e8f5", width=1)
+            # 3px left accent stripe — changes colour on hover for a crisp visual cue
+            accent = tk.Frame(tile, bg=_ACC_IDLE, width=3)
             accent.pack(side="left", fill="y")
 
             inner = tk.Frame(tile, bg=PANEL_BG, padx=6, pady=7)
@@ -917,26 +927,41 @@ class App(tk.Tk):
             cnt._icon_badge = icon_badge
             cnt._icon_color = icon_color
 
-            # right-side divider except last column
-            if col < 6:
-                tk.Frame(parent, bg=_card_border, width=1).grid(
-                    row=row, column=col, sticky="nes")
-
-            # Hover + click behaviour
+            # Hover + click + press feedback
             if click_cmd:
-                def _on_enter(_, w=tile, i=inner, iw=icon_wrap, c=cnt, t=title_lbl, d=delta_lbl, b=icon_badge):
-                    hover_bg = "#edf5ff"
-                    w.config(bg=hover_bg); i.config(bg=hover_bg); iw.config(bg=hover_bg)
-                    c.config(bg=hover_bg); t.config(bg=hover_bg); d.config(bg=hover_bg)
-                    b.config(bg=hover_bg)
-                def _on_leave(_, w=tile, i=inner, iw=icon_wrap, c=cnt, t=title_lbl, d=delta_lbl, b=icon_badge):
-                    w.config(bg=PANEL_BG); i.config(bg=PANEL_BG); iw.config(bg=PANEL_BG)
-                    c.config(bg=PANEL_BG); t.config(bg=PANEL_BG); d.config(bg=PANEL_BG)
-                    b.config(bg=PANEL_BG)
-                for widget in (tile, inner, icon_wrap, cnt, title_lbl, delta_lbl, icon_badge):
-                    widget.bind("<Enter>",   _on_enter)
-                    widget.bind("<Leave>",   _on_leave)
-                    widget.bind("<Button-1>",lambda _e, cmd=click_cmd: cmd())
+                _all_widgets = (tile, inner, icon_wrap, cnt, title_lbl, delta_lbl, icon_badge)
+
+                def _apply(bg, acc, a=accent, ws=_all_widgets):
+                    try:
+                        a.config(bg=acc)
+                        for w in ws:
+                            w.config(bg=bg)
+                    except Exception:
+                        pass
+
+                def _on_enter(_, cmd=click_cmd):
+                    _apply(_HOVER_BG, _ACC_HOVER)
+                    try: tile.config(cursor="right_ptr")
+                    except Exception: pass
+
+                def _on_leave(_):
+                    _apply(PANEL_BG, _ACC_IDLE)
+                    try: tile.config(cursor="arrow")
+                    except Exception: pass
+
+                def _on_press(_):
+                    _apply(_PRESS_BG, _ACC_HOVER)
+
+                def _on_release(_, cmd=click_cmd):
+                    _apply(_HOVER_BG, _ACC_HOVER)
+                    try: cmd()
+                    except Exception: pass
+
+                for w in _all_widgets + (accent,):
+                    w.bind("<Enter>",           _on_enter)
+                    w.bind("<Leave>",           _on_leave)
+                    w.bind("<ButtonPress-1>",   _on_press)
+                    w.bind("<ButtonRelease-1>", _on_release)
 
             # store accent frame reference on cnt for _refresh_counts
             cnt._accent = accent
@@ -1048,7 +1073,7 @@ class App(tk.Tk):
         # ── Big metric tiles (Processed / Complete / Review / Failed) ─────────
         metric_row = tk.Frame(perf_body, bg=PANEL_BG)
         metric_row.pack(fill="x", pady=(0, 12))
-        for _ci in range(4):
+        for _ci in range(3):
             metric_row.columnconfigure(_ci, weight=1)
 
         self._stat_labels = {}
@@ -1069,7 +1094,6 @@ class App(tk.Tk):
         _perf_tile(0, "PROCESSED", "hot_total",    TEXT_FG,  "#f0f5fc")
         _perf_tile(1, "MATCH",     "hot_complete", OK,       "#edfaf2")
         _perf_tile(2, "REVIEW",    "hot_review",   REVIEW,   "#fff8ec")
-        _perf_tile(3, "FAILED",    "hot_failed",   CRIT,     "#fff2f2")
 
         # ── Success rate bar ──────────────────────────────────────────────────
         rate_frame = tk.Frame(perf_body, bg=PANEL_BG)
@@ -1094,14 +1118,12 @@ class App(tk.Tk):
         sub_row.pack(fill="x")
         sub_row.columnconfigure(0, weight=1)
         sub_row.columnconfigure(1, weight=1)
-        sub_row.rowconfigure(0, minsize=110)
 
         # EDM / Duplicates
         edm_sub = tk.Frame(sub_row, bg="#f7f9fc", bd=0,
                            highlightthickness=1, highlightbackground="#ccd7e8")
         edm_sub.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
-        edm_sub.grid_propagate(False)
-        tk.Label(edm_sub, text="EDM / DUPLICATES",
+        tk.Label(edm_sub, text="EDM",
                  font=(FONT_SMALL[0], 7, "bold"), fg=TEXT_MUTED, bg="#f7f9fc").pack(
                      anchor="w", padx=10, pady=(9, 2))
         edm_top = tk.Frame(edm_sub, bg="#f7f9fc")
@@ -1135,7 +1157,6 @@ class App(tk.Tk):
         batch_sub = tk.Frame(sub_row, bg="#f7f9fc", bd=0,
                              highlightthickness=1, highlightbackground="#ccd7e8")
         batch_sub.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
-        batch_sub.grid_propagate(False)
         tk.Label(batch_sub, text="BATCH / OUTPUT",
                  font=(FONT_SMALL[0], 7, "bold"), fg=TEXT_MUTED, bg="#f7f9fc").pack(
                      anchor="w", padx=10, pady=(9, 2))
@@ -1200,14 +1221,14 @@ class App(tk.Tk):
 
         # Stage status pills — 1×3 row, only .config() updates during runtime
         _IDLE_DOT = "#c8d0da"
-        self._stage_pills: dict = {}  # key → (frame, dot_canvas, text_label, active_color)
+        self._stage_pills: dict = {}  # key → (frame, dot_canvas, text_label, active_color, dim_color)
         _pill_defs = [
-            ("AWB",   "Searching for AWBs",  "#4a33a2", 0, 0),
-            ("EDM",   "Checking duplicates", "#1f78d1", 0, 1),
-            ("BATCH", "Building batches",    "#2f9d57", 0, 2),
+            ("AWB",   "Searching for AWBs",  "#4a33a2", "#2d1f63", 0, 0),
+            ("EDM",   "Checking duplicates", "#1f78d1", "#134a83", 0, 1),
+            ("BATCH", "Building batches",    "#2f9d57", "#1b5e34", 0, 2),
         ]
         activity_body.grid_columnconfigure(2, weight=1)
-        for _sk, _pill_txt, _acol, _pr, _pc in _pill_defs:
+        for _sk, _pill_txt, _acol, _dcol, _pr, _pc in _pill_defs:
             _pf = tk.Frame(activity_body, bg=PANEL_BG, bd=0, highlightthickness=0)
             _pf.grid(row=_pr, column=_pc, sticky="ew", padx=(0, 8), pady=(0, 8))
             _dot = tk.Canvas(_pf, width=9, height=9, bg=PANEL_BG,
@@ -1217,8 +1238,10 @@ class App(tk.Tk):
             _lbl = tk.Label(_pf, text=_pill_txt, font=FONT_SMALL,
                             fg=TEXT_MUTED, bg=PANEL_BG, anchor="w")
             _lbl.pack(side="left", fill="x")
-            self._stage_pills[_sk] = (_pf, _dot, _lbl, _acol)
-        self._stage_active_jobs: dict = {}  # stage_key → after() job id
+            self._stage_pills[_sk] = (_pf, _dot, _lbl, _acol, _dcol)
+        self._stage_active_jobs: dict = {}
+        self._blink_dot_phase: dict = {}  # stage_key → bool (True = bright phase)
+        self.after(600, self._blink_tick)  # stage_key → after() job id
 
         # Separator
         tk.Frame(activity_body, bg="#e0e6f0", height=1).grid(
@@ -1230,33 +1253,46 @@ class App(tk.Tk):
             font=(FONT_SMALL[0], 8, "bold"), fg=TEXT_MUTED, bg=PANEL_BG, anchor="w",
         ).grid(row=3, column=0, columnspan=3, sticky="ew", pady=(0, 4))
 
-        # 3 fixed recent-match rows — only text/colour updated at runtime
+        # 3 fixed recent-match rows — alternating bg + 1px separators between rows
+        _MATCH_ROW_BG = [PANEL_BG, "#f0f5fb", PANEL_BG]
         self._recent_awb_lbls: list = []  # list of (dot_canvas, awb_label, time_label)
         for _i in range(3):
-            _rf = tk.Frame(activity_body, bg=PANEL_BG, bd=0, highlightthickness=0)
-            _rf.grid(row=4 + _i, column=0, columnspan=3, sticky="ew", pady=1)
-            _d2 = tk.Canvas(_rf, width=9, height=9, bg=PANEL_BG,
+            if _i > 0:
+                # 1px separator between rows
+                tk.Frame(activity_body, bg="#d8e4f4", height=1).grid(
+                    row=4 + (_i * 2) - 1, column=0, columnspan=3, sticky="ew")
+            _row_bg = _MATCH_ROW_BG[_i]
+            _rf = tk.Frame(activity_body, bg=_row_bg, bd=0, highlightthickness=0)
+            _rf.grid(row=4 + (_i * 2), column=0, columnspan=3, sticky="ew", pady=(2, 2))
+            _d2 = tk.Canvas(_rf, width=9, height=9, bg=_row_bg,
                             highlightthickness=0, bd=0)
             _d2.create_oval(1, 1, 8, 8, fill=_IDLE_DOT, outline=_IDLE_DOT, tags="dot")
-            _d2.pack(side="left", padx=(0, 6))
+            _d2.pack(side="left", padx=(2, 6))
             _l2 = tk.Label(_rf, text="—", font=FONT_SMALL,
-                           fg=TEXT_MUTED, bg=PANEL_BG, anchor="w")
+                           fg=TEXT_MUTED, bg=_row_bg, anchor="w")
             _l2.pack(side="left", fill="x", expand=True)
-            _t2 = tk.Label(_rf, text="", font=(FONT_SMALL[0], FONT_SMALL[1]),
-                           fg=TEXT_MUTED, bg=PANEL_BG, anchor="e")
-            _t2.pack(side="right", padx=(4, 0))
+            _t2 = tk.Label(_rf, text="", font=(FONT_MONO[0], FONT_SMALL[1] - 1),
+                           fg=TEXT_MUTED, bg=_row_bg, anchor="e")
+            _t2.pack(side="right", padx=(4, 4))
             self._recent_awb_lbls.append((_d2, _l2, _t2))
 
-        # Separator
+        # Separator (shifted down to row 9 to make room for inter-row separators)
         tk.Frame(activity_body, bg="#e0e6f0", height=1).grid(
-            row=7, column=0, columnspan=3, sticky="ew", pady=(10, 6))
+            row=9, column=0, columnspan=3, sticky="ew", pady=(10, 6))
 
-        # Status line — single label, text-only updates
+        # Status line — left: status text; right: time + current file being processed
+        _status_row_frame = tk.Frame(activity_body, bg=PANEL_BG)
+        _status_row_frame.grid(row=10, column=0, columnspan=3, sticky="ew")
         self._live_status_lbl = tk.Label(
-            activity_body, text="Ready",
+            _status_row_frame, text="Ready",
             font=FONT_SMALL, fg=TEXT_MUTED, bg=PANEL_BG, anchor="w",
         )
-        self._live_status_lbl.grid(row=8, column=0, columnspan=3, sticky="ew")
+        self._live_status_lbl.pack(side="left", fill="x", expand=True)
+        self._current_file_lbl = tk.Label(
+            _status_row_frame, text="",
+            font=(FONT_MONO[0], FONT_SMALL[1] - 1), fg=TEXT_MUTED, bg=PANEL_BG, anchor="e",
+        )
+        self._current_file_lbl.pack(side="right", padx=(6, 0))
 
         # Back-compat stubs (export / match-card code still references these)
         self._match_cards = deque(maxlen=5)
@@ -1307,7 +1343,7 @@ class App(tk.Tk):
 
         tk.Label(
             bb_left,
-            text=f"AWB Pipeline V3  ·  Base: {config.BASE_DIR.name}",
+            text=f"ScavGajjar V3  ·  Base: {config.BASE_DIR.name}",
             font=FONT_SMALL, fg=TEXT_SEC, bg="#e6ebf1",
         ).pack(side="left")
 
@@ -1344,7 +1380,7 @@ class App(tk.Tk):
             bg="#dbe2ea", fg=TEXT_FG,
             activebackground="#cfd7e1",
             highlightbackground="#dbe2ea",
-            cursor="hand2",
+            cursor="right_ptr",
         ).pack(side="right", padx=(4, 0))
         tk.Button(
             bb_right, text="Open DB", font=FONT_SMALL, command=lambda: self._open_file(config.AWB_EXCEL_PATH),
@@ -1352,7 +1388,7 @@ class App(tk.Tk):
             bg="#dbe2ea", fg=TEXT_FG,
             activebackground="#cfd7e1",
             highlightbackground="#dbe2ea",
-            cursor="hand2",
+            cursor="right_ptr",
         ).pack(side="right", padx=(4, 0))
         tk.Button(
             bb_right, text="Refresh DB", font=FONT_SMALL, command=self.on_refresh_db,
@@ -1360,7 +1396,7 @@ class App(tk.Tk):
             bg="#dbe2ea", fg=TEXT_FG,
             activebackground="#cfd7e1",
             highlightbackground="#dbe2ea",
-            cursor="hand2",
+            cursor="right_ptr",
         ).pack(side="right", padx=(4, 0))
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -2042,15 +2078,15 @@ class App(tk.Tk):
 
     def _infer_match_confidence(self, method: str) -> str:
         m = str(method or "").upper()
-        if "FILENAME" in m:
+        if m.startswith("FILENAME"):
             return "HIGH"
-        if "TEXT-LAYER" in m:
-            return "STRONG"
-        if "OCR-STRONG" in m or "OCR-CONTEXT" in m:
+        if "TEXT-LAYER" in m or m.startswith("TEXTLAYER"):
+            return "HIGH"
+        if "TOLERANCE" in m:
             return "MEDIUM"
-        if "OCR" in m:
+        if "OCR-TABLE" in m or "UPSCAL" in m or "EDM" in m:
             return "MEDIUM"
-        return "CHECKED"
+        return "STRONG"
 
     def _initialize_session_audit_tail(self):
         """Start this UI session from current audit EOF so 3 summary tabs are run-scoped."""
@@ -2118,8 +2154,16 @@ class App(tk.Tk):
 
     def _candidate_bucket(self, method: str) -> str:
         m = str(method or "").upper()
+        # S — definitive: filename regex or embedded text layer
         if m.startswith("FILENAME") or m.startswith("TEXTLAYER") or m.startswith("TEXT-LAYER"):
             return "strong"
+        # W — tolerance / fuzzy match (1-2 digit off)
+        if "TOLERANCE" in m:
+            return "weak"
+        # S — clean exact match at Stage 2 (OCR-Main first pass, reliable)
+        if m.startswith("OCR-MAIN") and "EXACT" in m:
+            return "strong"
+        # M — exact/400-pattern via Stage 3+, probes, rotation, or rescue
         if "EXACT" in m or "-400" in m or "400" in m:
             return "mix"
         return "weak"
@@ -2421,25 +2465,54 @@ class App(tk.Tk):
     # LIVE ACTIVITY PANEL — zero widget-creation helpers
     # ─────────────────────────────────────────────────────────────────────────
     def _pulse_stage(self, stage_key: str):
-        """Light up a stage pill steadily. No timer — pills stay lit until clear_log or stop."""
+        """Light up a stage pill (blink ticker will handle animation)."""
         if not hasattr(self, "_stage_pills"):
             return
         pill_info = self._stage_pills.get(stage_key)
         if pill_info is None:
             return
-        _pf, dot, lbl, active_col = pill_info
+        _pf, dot, lbl, active_col, _dim_col = pill_info
         try:
             dot.itemconfig("dot", fill=active_col, outline=active_col)
             lbl.config(fg=TEXT_FG)
         except Exception:
             pass
 
-    def _push_recent_awb(self, awb: str, _method: str, _conf: str, timing_str: str):
-        """Slide the 3 fixed recent-AWB rows: new entry at top, others shift down. Config-only."""
+    def _blink_tick(self):
+        """Blink only the dot (not the text) for active stage pills.
+        Inactive dots are never touched — they stay at _IDLE_DOT set by _refresh_live_status."""
+        if getattr(self, "_is_closing", False):
+            return
+        if hasattr(self, "_stage_pills"):
+            awb_on    = self.awb_proc is not None
+            try:
+                edm_on = self.is_edm_duplicate_running()
+            except Exception:
+                edm_on = False
+            try:
+                batch_on = self.is_batch_builder_running()
+            except Exception:
+                batch_on = False
+            running_map = {"AWB": awb_on, "EDM": edm_on, "BATCH": batch_on}
+            for _sk, _info in self._stage_pills.items():
+                _, dot, _lbl, active_col, dim_col = _info
+                if running_map.get(_sk):
+                    phase = self._blink_dot_phase.get(_sk, True)
+                    self._blink_dot_phase[_sk] = not phase
+                    # Alternate between full active color and a darker shade of the same hue.
+                    # Never touch _IDLE_DOT so inactive dots stay visually still.
+                    col = active_col if phase else dim_col
+                    try:
+                        dot.itemconfig("dot", fill=col, outline=col)
+                    except Exception:
+                        pass
+        self.after(600, self._blink_tick)
+
+    def _push_activity_line(self, text: str, dot_color: str, text_color: str, timing_str: str):
+        """Slide all 3 activity rows down and insert a new entry at the top. Config-only."""
         rows = getattr(self, "_recent_awb_lbls", [])
         if not rows:
             return
-        # Shift existing entries down (bottom ← middle ← top).
         for i in range(len(rows) - 1, 0, -1):
             _d_prev, _l_prev, _t_prev = rows[i - 1]
             _d_cur, _l_cur, _t_cur = rows[i]
@@ -2450,14 +2523,17 @@ class App(tk.Tk):
                 _t_cur.config(text=_t_prev.cget("text"))
             except Exception:
                 pass
-        # Place new entry at top row.
         _d0, _l0, _t0 = rows[0]
         try:
-            _d0.itemconfig("dot", fill=OK, outline=OK)
-            _l0.config(text=f"AWB {awb}", fg=OK)
+            _d0.itemconfig("dot", fill=dot_color, outline=dot_color)
+            _l0.config(text=text, fg=text_color)
             _t0.config(text=timing_str)
         except Exception:
             pass
+
+    def _push_recent_awb(self, awb: str, _method: str, _conf: str, timing_str: str):
+        """Push a matched AWB to the top activity row."""
+        self._push_activity_line(f"AWB {awb}", OK, OK, timing_str)
 
     def _update_status_badges(self):
         if not hasattr(self, "lbl_status_strip"):
@@ -2635,7 +2711,7 @@ class App(tk.Tk):
         y = self.winfo_rooty() + max(0, (self.winfo_height() - height) // 2)
 
         dialog = tk.Toplevel(self)
-        dialog.title("Employee Login — AWB Pipeline V3")
+        dialog.title("Employee Login — ScavGajjar V3")
         dialog.configure(bg=APP_BG)
         dialog.resizable(False, False)
         dialog.transient(self)
@@ -2647,7 +2723,7 @@ class App(tk.Tk):
         hdr.pack_propagate(False)
         tk.Label(
             hdr,
-            text="Employee Login — AWB Pipeline V3",
+            text="Employee Login — ScavGajjar V3",
             font=(FONT_LABEL[0], FONT_LABEL[1], "bold"),
             fg="white",
             bg=FEDEX_PURPLE,
@@ -2698,7 +2774,7 @@ class App(tk.Tk):
             fg=TEXT_FG,
             activebackground=BTN_HOVER,
             highlightbackground=BTN_BG,
-            cursor="hand2",
+            cursor="right_ptr",
         ).pack(side="right", padx=(8, 0))
         tk.Button(
             btn_row,
@@ -2711,7 +2787,7 @@ class App(tk.Tk):
             activebackground=FEDEX_PURPLE,
             activeforeground="white",
             highlightbackground=FEDEX_PURPLE,
-            cursor="hand2",
+            cursor="right_ptr",
         ).pack(side="right")
 
         entry.focus_set()
@@ -3084,9 +3160,6 @@ class App(tk.Tk):
             self._stat_labels["hot_review"].config(
                 text=str(review),
                 fg=CRIT if review > 0 else REVIEW)
-            self._stat_labels["hot_failed"].config(
-                text=str(failed),
-                fg=CRIT if failed > 0 else self._default_fg)
             # Progress bar — rate = matched / resolved
             rate = complete / max(1, resolved)
             try:
@@ -3191,10 +3264,10 @@ class App(tk.Tk):
                 _info = self._stage_pills.get(_sk)
                 if _info is None:
                     continue
-                _, _dot, _lbl, _acol = _info
+                _, _dot, _lbl, _acol, _dcol = _info
                 try:
                     if _running:
-                        _dot.itemconfig("dot", fill=_acol, outline=_acol)
+                        # Dot is handled by _blink_tick; only sync the text colour.
                         _lbl.config(fg=TEXT_FG)
                     else:
                         _dot.itemconfig("dot", fill=_IDLE_DOT, outline=_IDLE_DOT)
@@ -3208,7 +3281,7 @@ class App(tk.Tk):
         awb_idle_bg = top_row_bg
         top_row_hover_bg = "#5a42b8"
         self.btn_get_awb.config(
-            text="Stop AWB" if awb_on else "Start AWB",
+            text="Stop Scan" if awb_on else "Start Scan",
             bg=top_row_bg if awb_on else awb_idle_bg,
             fg="white",
             activebackground=top_row_hover_bg,
@@ -3441,7 +3514,7 @@ class App(tk.Tk):
         self.log_widget.configure(state="disabled")
         # Reset stage pills to idle
         _IDLE_DOT = "#c8d0da"
-        for _sk, (_pf, _dot, _lbl, _acol) in getattr(self, "_stage_pills", {}).items():
+        for _sk, (_pf, _dot, _lbl, _acol, _dcol) in getattr(self, "_stage_pills", {}).items():
             try:
                 _dot.itemconfig("dot", fill=_IDLE_DOT, outline=_IDLE_DOT)
                 _lbl.config(fg=TEXT_MUTED)
@@ -3538,6 +3611,22 @@ class App(tk.Tk):
                     )
                 except Exception:
                     pass
+
+            # Track current file being processed — shown in right side of status line.
+            if message.startswith("Processing: ") or "[THIRD-PASS] Resuming: " in message:
+                _colon = message.find(": ")
+                if _colon >= 0:
+                    _fname = message[_colon + 2:].strip()
+                    try:
+                        self._current_file_lbl.config(
+                            text=f"{ts}  ·  {_fname}", fg=TEXT_MUTED)
+                    except Exception:
+                        pass
+
+            # Deferred / skipped files → push to activity rows with orange dot.
+            if "[DEFER]" in message:
+                _defer_text = message.split("[DEFER]", 1)[-1].strip()
+                self._push_activity_line(_defer_text, REVIEW, REVIEW, ts)
 
             # Timing fallback: keep existing match card timing fresh.
             text_timing_ms = self._extract_total_active_ms_from_timing_line(message)
@@ -3747,7 +3836,7 @@ class App(tk.Tk):
         self.log_append("\n=== AWB Hotfolder started ===")
         cmd = [sys.executable, "-u", "-m", "V3.services.hotfolder"]
         self.awb_proc = self._popen_utf8(cmd)
-        self.btn_get_awb.config(text="Stop AWB")
+        self.btn_get_awb.config(text="Stop Scan")
         self._refresh_live_status()
 
         def reader():
@@ -3759,12 +3848,12 @@ class App(tk.Tk):
             rc = self.awb_proc.wait()
             self.awb_proc = None
             self._awb_start_time = None
-            self.after(0, lambda: self.btn_get_awb.config(text="Start AWB"))
+            self.after(0, lambda: self.btn_get_awb.config(text="Start Scan"))
             self.after(0, self._refresh_live_status)
-            self.set_status("AWB stopped." if rc == 0 else "AWB ended with errors.")
-            if rc != 0 and not self._is_closing:
+            self.set_status("AWB search stopped.")
+            if rc not in (0, -15) and not self._is_closing:
                 self.log_append(
-                    f"[HOTFOLDER CRASH] Process exited with code {rc} — click Start AWB to restart"
+                    f"[HOTFOLDER CRASH] Process exited with code {rc} — click Start Scan to restart"
                 )
 
         threading.Thread(target=reader, daemon=True).start()
@@ -3796,7 +3885,7 @@ class App(tk.Tk):
             self.awb_proc = None
             if stop_edm_checker:
                 self.edm_proc = None
-            self.btn_get_awb.config(text="Start AWB")
+            self.btn_get_awb.config(text="Start Scan")
             self._refresh_live_status()
             return
         if awb_running:
@@ -3810,7 +3899,7 @@ class App(tk.Tk):
                 pass
         if stop_edm_checker:
             self._stop_edm_duplicate_checker()
-        self.btn_get_awb.config(text="Start AWB")
+        self.btn_get_awb.config(text="Start Scan")
         self._refresh_live_status()
 
     def on_toggle_get_awb(self):
@@ -3942,7 +4031,7 @@ class App(tk.Tk):
                 self.log_append("\n=== [CYCLE] Full Cycle Once started ===")
                 self.set_status("Full cycle: preparing services...")
 
-                # Start AWB if not running
+                # Start Scan if not running
                 if not self.is_awb_running():
                     started_awb = True
                     self.start_awb()
@@ -4172,7 +4261,7 @@ class App(tk.Tk):
         self._show_toast("AUTO MODE started", "success")
         self._refresh_live_status()
 
-        # Start AWB if not running
+        # Start Scan if not running
         if not self.is_awb_running():
             self.start_awb()
         if self.edm_enabled and not self.is_edm_duplicate_running():
@@ -4198,7 +4287,7 @@ class App(tk.Tk):
                             self._sleep_interval()
                             continue
 
-                    # Step 2: Stop AWB so no new files arrive during batch
+                    # Step 2: Stop Scan so no new files arrive during batch
                     self._set_auto_phase("Stopping AWB")
                     if self.is_awb_running():
                         self.stop_awb(stop_edm_checker=False)

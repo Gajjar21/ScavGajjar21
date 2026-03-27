@@ -595,7 +595,9 @@ def main() -> None:
     total_files = sum(len(g["pdf_paths"]) for g in scanned)
     print(f"Found {len(scanned)} AWB(s) in CLEAN ({total_files} file(s) total)")
 
-    tier_map = _load_stage_cache_tiers() if ENABLE_TIER_BATCHING else {}
+    # Always load tier_map for audit logging; ENABLE_TIER_BATCHING only controls
+    # whether separate per-tier PDFs are built — not whether tier data is recorded.
+    tier_map = _load_stage_cache_tiers()
 
     resolved: list[dict] = []
     seq = 1
@@ -604,7 +606,7 @@ def main() -> None:
         pdf_paths  = g["pdf_paths"]
         page_counts = g["page_counts"]
         inv_pages  = sum(page_counts)
-        tier       = tier_map.get(awb, "Low") if ENABLE_TIER_BATCHING else ""
+        tier       = tier_map.get(awb, "Low")
 
         resolved.append({
             "seq":         seq,
