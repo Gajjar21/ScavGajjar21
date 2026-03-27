@@ -69,6 +69,12 @@ _DASH_FONT = Font(color="FFFFFF", bold=True)
 
 def _acquire_lock() -> int:
     """Block until lock acquired or timeout.  Returns fd (int) of the lock file."""
+    # Ensure the directory exists before trying to create the lock file inside it.
+    # This guards the edge case where a service subprocess starts before ensure_dirs() runs.
+    try:
+        config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
     deadline = time.time() + _LOCK_TIMEOUT
     while True:
         try:
@@ -405,6 +411,11 @@ _DASHBOARD_REBUILD_INTERVAL = 300  # seconds — rebuild dashboard at most every
 def rebuild_dashboard_now() -> None:
     """Force a full dashboard rebuild.  Called on app startup and manually."""
     global _last_dashboard_rebuild
+    # Ensure DATA_DIR exists before any write (defensive: mirrors _acquire_lock guard).
+    try:
+        config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
     fd = None
     try:
         fd = _acquire_lock()
@@ -492,7 +503,7 @@ def _read_dashboard_stats_once() -> dict | None:
                 if not ts.startswith(today):
                     continue
                 result = str(row[4] or "").upper()
-                if result in ("CLEAN", "CLEAN-UNCHECKED"):
+                if result == "CLEAN":
                     stats["edm_clean"] += 1
                 elif result == "REJECTED":
                     stats["edm_rejected"] += 1

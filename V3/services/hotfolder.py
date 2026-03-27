@@ -427,6 +427,7 @@ def main() -> None:
                             # Don't re-add files already queued for third-pass
                             if path not in timeout_deferred_state and path not in deferred_long_pass:
                                 deferred_long_pass.append(path)
+                                log(f"[DEFER] {os.path.basename(path)} → long-pass")
                         elif not os.path.exists(path):
                             _clear_attempt_count(_basename)
                             _file_proc_seconds.pop(path, None)

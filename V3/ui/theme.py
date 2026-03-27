@@ -38,18 +38,18 @@ DIALOG_FG = "#1a1a1a"
 # ── Fonts ────────────────────────────────────────────────────────────────────
 if _IS_WIN:
     FONT_HEADER = ("Segoe UI", 16, "bold")
-    FONT_TITLE  = ("Segoe UI", 8, "bold")
-    FONT_LABEL  = ("Segoe UI", 10)
-    FONT_SMALL  = ("Segoe UI", 9)
-    FONT_MONO   = ("Consolas", 9)
+    FONT_TITLE  = ("Segoe UI", 9, "bold")
+    FONT_LABEL  = ("Segoe UI", 11)
+    FONT_SMALL  = ("Segoe UI", 10)
+    FONT_MONO   = ("Consolas", 10)
     FONT_BTN    = ("Segoe UI", 9)
     FONT_COUNT  = ("Segoe UI", 24, "bold")
 else:
     FONT_HEADER = ("Helvetica", 17, "bold")
-    FONT_TITLE  = ("Helvetica", 9, "bold")
-    FONT_LABEL  = ("Helvetica", 11)
-    FONT_SMALL  = ("Helvetica", 9)
-    FONT_MONO   = ("Menlo", 9)
+    FONT_TITLE  = ("Helvetica", 10, "bold")
+    FONT_LABEL  = ("Helvetica", 12)
+    FONT_SMALL  = ("Helvetica", 10)
+    FONT_MONO   = ("Menlo", 10)
     FONT_BTN    = ("Helvetica", 9, "bold")
     FONT_COUNT  = ("Helvetica", 24, "bold")
 

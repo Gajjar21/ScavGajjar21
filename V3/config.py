@@ -290,6 +290,7 @@ PROTECTED_FILES = {AWB_EXCEL_PATH, AWB_LOGS_PATH, AUDIT_XLSX_PATH}
 
 # ── Folders to create on startup ─────────────────────────────────────────────
 RUNTIME_DIRS = [
+    ORGANIZER_DIR,
     INBOX_DIR, PROCESSED_DIR, CLEAN_DIR, REJECTED_DIR,
     NEEDS_REVIEW_DIR, PENDING_PRINT_DIR,
     DATA_DIR, OUT_DIR, LOG_DIR,

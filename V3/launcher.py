@@ -39,7 +39,7 @@ class Launcher(tk.Tk):
 
         tk.Label(
             card,
-            text="AWB Pipeline V3",
+            text="ScavGajjar V3",
             fg="#f2f5f9",
             bg="#130a2f",
             font=("Arial", 16, "bold"),
