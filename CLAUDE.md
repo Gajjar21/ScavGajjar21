@@ -144,3 +144,50 @@ Copy `.env.example` to `.env`. Key variables:
 - **EDM duplicate gate**: `edm_duplicate_checker.py` applies four strategies in order (exact hash, perceptual hash, text similarity, OCR comparison). A `CLEAN-UNCHECKED` bucket exists for safe fallback when the EDM service is unavailable.
 - **Cross-platform paths**: `config.py` normalises Windows backslash paths read from `.env`; always use `Path` objects in new code.
 - **Log rotation**: `pipeline.log` rotates at 50 MB (2 backups); `edm_checker.log` at 20 MB (1 backup).
+- **Probe skip for upright image-only docs** (commit `aa1cffe`): `_run_fastlane_quick_rotated_psm6` returns immediately when `rot is None` (no angle-detection hint), skipping `rotation_probe_best()`. `_run_early_rotation_route_probe_strict` also returns immediately when `_rotation_hint is None`. `_run_micro_probe_exact_only` only adds the 90° secondary pass when `_rotation_hint is not None`. Saves 7–19s per upright image-only doc. Rotated docs missed by angle detection fall to Stage 3.1 + Stage 4 in the long-pass.
+
+## Performance Benchmarks (2026-03-26, 100-doc batch, commit `aa1cffe`)
+
+### Fast-lane upright image-only docs (OCR-Main Stage 2 match)
+| Before avg total | After avg total | Saved |
+|-----------------|-----------------|-------|
+| ~13,000ms | ~3,200ms | **~9,800ms (~10s per file)** |
+
+Representative files:
+| File | Before | After | Saved |
+|------|--------|-------|-------|
+| 20260317155404720.pdf | 18,720ms | 3,085ms | -15,635ms |
+| 20260317160223997.pdf | 18,110ms | 4,542ms | -13,568ms |
+| 20260317155736239.pdf | 22,361ms | 9,976ms | -12,385ms |
+| 20260317155845241.pdf | 14,184ms | 3,086ms | -11,098ms |
+| 20260317155113552.pdf | 14,534ms | 3,246ms | -11,288ms |
+| 10A.pdf | 13,949ms | 2,994ms | -10,955ms |
+
+### ProbeMicro early-lane docs
+| File | Before | After | Saved |
+|------|--------|-------|-------|
+| 20260317155001448.pdf | 12,059ms | 1,458ms | -10,601ms |
+| z.pdf / q.pdf / 5A.pdf / g.pdf | ~11,000ms | ~1,200ms | ~-9,800ms |
+
+### Known regressions (rotated docs where angle detection missed — still match correctly)
+| File | Before | After | Method change |
+|------|--------|-------|--------------|
+| 6.pdf | 6,801ms | 24,364ms | FastQuickRot-PreStage2 → FastCertainRotRescue |
+| 20260317160052993.pdf | 7,759ms | 21,004ms | FastQuickRot-PreStage2 → FastCertainRotRescue |
+| 20260318114358685.pdf | 11,475ms | 36,856ms | FastQuickRot-PreStage2 → Budget path |
+
+**Net across batch**: ~16 files × -10s = -160s saved vs 3 regressions × +19s = +56s lost → **~104s net saved per 100-doc batch.**
+
+### Timing field reference (`[TIMING]` log line)
+| Field | Meaning |
+|-------|---------|
+| `filename_ms` | Stage 0 filename regex |
+| `text_layer_ms` | Stage 1 text-layer extraction |
+| `pre_stage2_ms` | Wall time from pipeline start to Stage 2 entry (captures all pre-Stage 2 probe overhead) |
+| `ocr_main_ms` | Stage 2 OCR at DPI_MAIN (320) |
+| `ocr_strong_ms` | Stage 3 OCR at DPI_STRONG (420) |
+| `ocr_context_ms` | Stage 5 table/context rescue |
+| `rotation_ms` | Stage 4 rotation fallback |
+| `total_active_ms` | Total wall time in `process_pdf()` |
+
+Pre_stage2_ms baseline after fix: **~700ms** (text-layer docs, probes skip instantly) · **~1,500–2,700ms** (upright image-only, no rotation hint) · **~9,000–10,000ms** (image-only with angle-detection rotation hint, probes fire correctly).
