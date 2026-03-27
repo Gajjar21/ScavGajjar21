@@ -1158,28 +1158,11 @@ def process_pdf(
 
         rot: Optional[int] = _rotation_hint if _rotation_hint in (90, 180, 270) else None
         if rot is None:
-            try:
-                _probe_img = get_image(ROTATION_PROBE_DPI, 0)
-                _mk4 = frozenset(ALLOWED_ROTATION_ANGLES)
-                if _mk4 in _rotation_probe_memo:
-                    _base, _scores, _ = _rotation_probe_memo[_mk4]
-                else:
-                    _base, _scores, _ptexts4 = rotation_probe_best(
-                        _probe_img,
-                        return_scores=True,
-                        preferred_angles=ALLOWED_ROTATION_ANGLES,
-                    )
-                    _rotation_probe_memo[_mk4] = (_base, _scores, _ptexts4)
-                if _base in (90, 180, 270):
-                    _best = float(_scores.get(_base, 0))
-                    _second = max(float(v) for k, v in _scores.items() if k != _base)
-                    _margin = _best - _second
-                    if _margin >= float(ROTATION_PROBE_LIKELY_MARGIN):
-                        rot = int(_base)
-                        _rotation_hint = rot
-            except Exception as _e:
-                log(f"[DEBUG] _run_fastlane_quick_rotated_psm6 probe: {_e}")
-                rot = None
+            # Angle detection found no rotation hint — skip the expensive
+            # rotation_probe_best() call. Upright docs match at Stage 2 in ~1s.
+            # Genuinely rotated docs missed by angle detection are caught by
+            # Stage 3.1 + Stage 4 in the long-pass.
+            return False
 
         if rot not in (90, 180, 270):
             return False
@@ -1386,6 +1369,10 @@ def process_pdf(
         if _rotation_hint in (90, 180, 270):
             # Handled by the hint-based early rotated probe.
             return False
+        if _rotation_hint is None:
+            # No rotation hint from angle detection — skip rotation_probe_best()
+            # inside _get_fastlane_certain_rotation_signal for upright docs.
+            return False
 
         base_fast, margin = _get_fastlane_certain_rotation_signal()
         if base_fast not in (90, 180, 270):
@@ -1424,8 +1411,10 @@ def process_pdf(
         if _rotation_hint in (90, 180, 270):
             if _rotation_hint not in angles:
                 angles.append(_rotation_hint)
-        elif _is_image_only:
-            # Cheap secondary check for rotated scans.
+        elif _is_image_only and _rotation_hint is not None:
+            # Only probe the rotated angle if angle detection already suggested
+            # rotation. Without a hint the doc is likely upright and the 90°
+            # pass just adds 1–2s of wasted OCR work.
             angles.append(90)
 
         for rot in angles[:2]:
