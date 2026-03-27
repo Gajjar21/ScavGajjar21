@@ -3625,7 +3625,7 @@ class App(tk.Tk):
             try:
                 fn()
             except Exception as e:
-                self.after(0, lambda: messagebox.showerror("Error", str(e)))
+                self.after(0, lambda e=e: messagebox.showerror("Error", str(e)))
                 self.log_append(f"[ERROR] {e}")
                 self.set_status("Ready.")
         threading.Thread(target=wrapper, daemon=True).start()

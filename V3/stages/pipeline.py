@@ -98,9 +98,9 @@ try:
         record_hotfolder_needs_review,
     )
 except Exception:
-    def record_hotfolder_start(*_a: Any, **_k: Any) -> None: ...  # noqa: E704
-    def record_hotfolder_end(*_a: Any, **_k: Any) -> None: ...  # noqa: E704
-    def record_hotfolder_needs_review(*_a: Any, **_k: Any) -> None: ...  # noqa: E704
+    def record_hotfolder_start(*_a: Any, **_k: Any) -> None: ...  # noqa: E701
+    def record_hotfolder_end(*_a: Any, **_k: Any) -> None: ...  # noqa: E701
+    def record_hotfolder_needs_review(*_a: Any, **_k: Any) -> None: ...  # noqa: E701
 
 # ── EDM existence fallback (optional runtime-gated call) ──────────────────────
 try:
