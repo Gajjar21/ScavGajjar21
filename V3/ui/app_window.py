@@ -648,7 +648,7 @@ class App(tk.Tk):
         title_col = tk.Frame(hdr, bg=HEADER_BG)
         title_col.pack(side="left", fill="y", pady=10)
         tk.Label(
-            title_col, text="AWB PIPELINE  V3",
+            title_col, text="ScavGajjar V3",
             font=FONT_HEADER, bg=HEADER_BG, fg=HEADER_FG,
         ).pack(anchor="w")
         sub_row = tk.Frame(title_col, bg=HEADER_BG)
@@ -2012,17 +2012,20 @@ class App(tk.Tk):
                 pass
 
         awb_running = self.is_awb_running()
-        state_key = (awb_running, bool(self.auto_running), bool(self.edm_enabled))
+        edm_dup_running = self.is_edm_duplicate_running()
+        state_key = (awb_running, bool(self.auto_running), bool(self.edm_enabled), edm_dup_running)
         if self._toolbar_icon_state_key == state_key:
             return
         icon_size = 14
         assign(self.btn_get_awb, "stop" if awb_running else "start", "white", icon_size)
-        assign(self.btn_auto, "stop" if self.auto_running else "auto", "white" if self.auto_running else "#71809a", icon_size)
+        assign(self.btn_auto, "stop" if self.auto_running else "auto", "white", icon_size)
         assign(self.btn_full_cycle, "cycle", "white", icon_size)
         assign(self.btn_upload, "upload", "white", icon_size)
         assign(self.btn_batch, "batch", "#71809a", icon_size)
         assign(self.btn_tiff, "tiff", "#71809a", icon_size)
         assign(self.btn_retry_review, "retry", "#71809a", icon_size)
+        if hasattr(self, "btn_edm_runner"):
+            assign(self.btn_edm_runner, "stop" if edm_dup_running else "start", INFO if edm_dup_running else "#6f7f97", icon_size)
         assign(self.btn_edm, "edm", INFO if self.edm_enabled else "#7b8597", icon_size)
         assign(self.btn_clear_all, "clear", "#7b8597", icon_size)
         assign(self.btn_global_actions, "more", "#5b687c", icon_size)
