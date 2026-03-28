@@ -42,21 +42,20 @@ SHEET_DASH  = "Dashboard"
 # Column definitions per sheet (name, width)
 _HOT_COLS = [
     ("Timestamp",        18), ("EmployeeID",     12), ("AWB",            15),
-    ("OriginalFilename", 30), ("ProcessedFilename", 22), ("DetectionMethod", 22),
-    ("DetectionTier",    14), ("HotfolderSecs",  14), ("OCRContextMs",   14),
+    ("OriginalFilename", 30), ("Route",          22), ("DetectionMethod", 22),
+    ("DetectionTier",    14), ("HotfolderSecs",  14), ("RescueSecs",     14),
     ("Result",           14), ("Notes",          45),
 ]
 _EDM_COLS = [
     ("Timestamp",    18), ("EmployeeID",    12), ("AWB",            15),
     ("Filename",     28), ("EDMResult",     16), ("DupPageCount",   14),
-    ("TotalPages",   12), ("DupRatio",      10), ("EDMSecs",        12),
+    ("TotalPages",   12), ("DupPct",        10), ("EDMSecs",        12),
     ("CompareMethod",18), ("Notes",         40),
 ]
 _BATCH_COLS = [
     ("Timestamp",    18), ("EmployeeID",    12), ("EventType",      18),
     ("BatchNumber",  14), ("Filename",      28), ("AWBCount",       10),
-    ("PageCount",    12), ("DetectionTier", 14), ("OutputPath",     40),
-    ("Notes",        35),
+    ("PageCount",    12), ("DetectionTier", 14), ("Notes",          40),
 ]
 
 _HDR_FILL  = PatternFill("solid", fgColor="1F3864")
@@ -189,8 +188,10 @@ def _rebuild_dashboard(wb):
         ts = str(row[0] or "")
         if not ts.startswith(today):
             continue
-        hot_total += 1
         result = str(row[9] or "").upper()
+        if result == "IN-PROGRESS":
+            continue
+        hot_total += 1
         if result == "COMPLETE":
             hot_complete += 1
         elif result == "NEEDS_REVIEW":
@@ -337,11 +338,11 @@ def _employee() -> str:
 def write_hotfolder_event(
     awb: str | None,
     original_filename: str,
-    processed_filename: str | None,
-    detection_method: str,
-    hotfolder_secs: float | None,
-    ocr_context_ms: float | None,
-    result: str,
+    route: str = "",
+    detection_method: str = "",
+    hotfolder_secs: float | None = None,
+    ocr_context_ms: float | None = None,
+    result: str = "",
     notes: str = "",
     employee_id: str | None = None,
 ) -> None:
@@ -349,7 +350,7 @@ def write_hotfolder_event(
     tier = detection_tier(detection_method)
     emp  = employee_id or _employee()
     row  = [
-        _now(), emp, awb, original_filename, processed_filename,
+        _now(), emp, awb, original_filename, route,
         detection_method, tier,
         round(hotfolder_secs, 2) if hotfolder_secs is not None else None,
         round(ocr_context_ms, 1) if ocr_context_ms is not None else None,
@@ -372,10 +373,11 @@ def write_edm_event(
 ) -> None:
     """Write a single row to the EDM sheet."""
     emp = employee_id or _employee()
+    dup_pct = round(dup_ratio * 100) if dup_ratio is not None else None
     row = [
         _now(), emp, awb, filename, edm_result,
         dup_page_count, total_pages,
-        round(dup_ratio, 3) if dup_ratio is not None else None,
+        dup_pct,
         round(edm_secs, 2) if edm_secs is not None else None,
         compare_method, notes,
     ]
@@ -389,7 +391,7 @@ def write_batch_event(
     awb_count: int | None = None,
     page_count: int | None = None,
     detection_tier_label: str | None = None,
-    output_path: str | None = None,
+    output_path: str | None = None,  # accepted but no longer written (kept for compat)
     notes: str = "",
     employee_id: str | None = None,
 ) -> None:
@@ -398,7 +400,6 @@ def write_batch_event(
     row = [
         _now(), emp, event_type, batch_number, filename,
         awb_count, page_count, detection_tier_label,
-        str(output_path) if output_path else None,
         notes,
     ]
     _append_row(SHEET_BATCH, row)
@@ -594,26 +595,14 @@ def read_alltime_stats() -> dict:
 # write_hotfolder_event() so that everything goes into the unified workbook.
 
 def record_hotfolder_start(original_filename: str) -> None:
-    """Record that hotfolder processing has begun for *original_filename*.
-
-    Writes an IN-PROGRESS row so that the Dashboard can count active files.
-    """
-    write_hotfolder_event(
-        awb="",
-        original_filename=original_filename,
-        processed_filename="",
-        detection_method="",
-        hotfolder_secs=None,
-        ocr_context_ms=None,
-        result="IN-PROGRESS",
-        notes="Hotfolder processing started",
-    )
+    """Record that hotfolder processing has begun — JSONL only, no Excel row."""
+    pass  # start events stay in pipeline_audit.jsonl via audit_event() in pipeline.py
 
 
 def record_hotfolder_end(
     original_filename: str,
     awb: str,
-    processed_filename: str,
+    route: str,
     match_method: str,
     hotfolder_secs: float | None = None,
     ocr_context_ms: float | None = None,
@@ -623,7 +612,7 @@ def record_hotfolder_end(
     write_hotfolder_event(
         awb=awb,
         original_filename=original_filename,
-        processed_filename=processed_filename,
+        route=route,
         detection_method=match_method,
         hotfolder_secs=hotfolder_secs,
         ocr_context_ms=ocr_context_ms,
@@ -637,12 +626,13 @@ def record_hotfolder_needs_review(
     reason: str,
     hotfolder_secs: float | None = None,
     detection_method: str = "No Match",
+    route: str = "NEEDS_REVIEW",
 ) -> None:
     """Record that *original_filename* could not be matched and needs manual review."""
     write_hotfolder_event(
         awb="",
         original_filename=original_filename,
-        processed_filename="",
+        route=route,
         detection_method=detection_method,
         hotfolder_secs=hotfolder_secs,
         ocr_context_ms=None,
@@ -657,7 +647,7 @@ if __name__ == "__main__":
     write_hotfolder_event(
         awb="123456789012",
         original_filename="invoice_001.pdf",
-        processed_filename="123456789012.pdf",
+        route="PROCESSED",
         detection_method="OCR-Exact",
         hotfolder_secs=4.3,
         ocr_context_ms=1200.0,
@@ -684,7 +674,7 @@ if __name__ == "__main__":
     )
     record_hotfolder_start("test_invoice.pdf")
     record_hotfolder_end(
-        "test_invoice.pdf", "987654321098", "987654321098.pdf",
+        "test_invoice.pdf", "987654321098", "PROCESSED",
         "Filename", hotfolder_secs=1.2, ocr_context_ms=0.0,
     )
     record_hotfolder_needs_review("unknown_doc.pdf", "No AWB found")

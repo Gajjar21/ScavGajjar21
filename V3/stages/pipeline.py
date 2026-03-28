@@ -87,11 +87,6 @@ except Exception:
         """No-op stub when audit module is not available."""
 
 try:
-    from V3.audit import write_hotfolder_event as _ca_write_hotfolder  # type: ignore[import-untyped]
-except Exception:
-    _ca_write_hotfolder = None
-
-try:
     from V3.audit.tracker import (  # type: ignore[import-untyped]
         record_hotfolder_start,
         record_hotfolder_end,
@@ -453,13 +448,17 @@ def process_pdf(
         _secs   = round(timings["total_active_ms"] / 1000.0, 3)
         _ocr_ms = timings.get("ocr_context_ms")
         if status == "MATCHED":
-            processed_fn = f"{awb}.pdf" if awb else ""
             record_hotfolder_end(
-                name, awb or "", processed_fn, match_method,
+                name, awb or "", route or "PROCESSED", match_method,
                 hotfolder_secs=_secs, ocr_context_ms=_ocr_ms,
             )
         else:
-            record_hotfolder_needs_review(name, reason or status, hotfolder_secs=_secs)
+            record_hotfolder_needs_review(
+                name, reason or status,
+                hotfolder_secs=_secs,
+                detection_method=match_method or "No Match",
+                route=route or "NEEDS_REVIEW",
+            )
         log(
             f"[TIMING] file={name} method={match_method} route={route} "
             f"filename_ms={timings['filename_ms']} text_layer_ms={timings['text_layer_ms']} "
@@ -622,21 +621,6 @@ def process_pdf(
             final_reason = f"{reason} | side_effects={'; '.join(side_effect_errors[:3])}"
 
         finalize("MATCHED", "PROCESSED", final_reason, method, awb=awb)
-        # Centralized audit (non-blocking — failure never disrupts pipeline)
-        if _ca_write_hotfolder is not None:
-            try:
-                _ca_write_hotfolder(
-                    awb=awb,
-                    original_filename=name,
-                    processed_filename=processed_name,
-                    detection_method=method,
-                    hotfolder_secs=round(timings.get("total_active_ms", 0) / 1000, 2),
-                    ocr_context_ms=timings.get("ocr_context_ms", 0),
-                    result="COMPLETE",
-                    notes=final_reason,
-                )
-            except Exception:
-                pass
         return True
 
     def send_review(reason, method):
@@ -656,20 +640,6 @@ def process_pdf(
         close_pdf()
         safe_move(pdf_path, NEEDS_REVIEW_DIR)
         finalize("NEEDS-REVIEW", "NEEDS_REVIEW", reason, method)
-        if _ca_write_hotfolder is not None:
-            try:
-                _ca_write_hotfolder(
-                    awb=None,
-                    original_filename=name,
-                    processed_filename=None,
-                    detection_method=method,
-                    hotfolder_secs=round(timings.get("total_active_ms", 0) / 1000, 2),
-                    ocr_context_ms=timings.get("ocr_context_ms", 0),
-                    result="NEEDS_REVIEW",
-                    notes=reason,
-                )
-            except Exception:
-                pass
 
     # ── Priority matchers ───────────────────────────────────────────────────
     def run_exact_priority():
