@@ -482,14 +482,17 @@ def _read_dashboard_stats_once() -> dict | None:
                 ts = str(row[0] or "")
                 if not ts.startswith(today):
                     continue
-                stats["hot_total"] += 1
                 result = str(row[9] or "").upper()
                 if result == "COMPLETE":
+                    stats["hot_total"] += 1
                     stats["hot_complete"] += 1
                 elif result == "NEEDS_REVIEW":
+                    stats["hot_total"] += 1
                     stats["hot_review"] += 1
                 elif result == "FAILED":
+                    stats["hot_total"] += 1
                     stats["hot_failed"] += 1
+                # IN-PROGRESS rows not counted — open pass, not a completed file
                 secs = row[7]
                 if secs and isinstance(secs, (int, float)):
                     hot_secs_list.append(float(secs))
@@ -633,13 +636,14 @@ def record_hotfolder_needs_review(
     original_filename: str,
     reason: str,
     hotfolder_secs: float | None = None,
+    detection_method: str = "No Match",
 ) -> None:
     """Record that *original_filename* could not be matched and needs manual review."""
     write_hotfolder_event(
         awb="",
         original_filename=original_filename,
         processed_filename="",
-        detection_method="No Match",
+        detection_method=detection_method,
         hotfolder_secs=hotfolder_secs,
         ocr_context_ms=None,
         result="NEEDS_REVIEW",
