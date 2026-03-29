@@ -1188,7 +1188,7 @@ class App(tk.Tk):
                  padx=10, pady=6).pack(side="left")
         self._alltime_summary_lbl = tk.Label(
             alltime_strip,
-            text="—  matched  ·  —  review  ·  —  failed",
+            text="—  total  ·  —  matched  ·  —  review  ·  —  failed",
             font=(FONT_SMALL[0], 8), fg=TEXT_SEC, bg="#eef1f7",
         )
         self._alltime_summary_lbl.pack(side="right", padx=10)
@@ -3206,8 +3206,9 @@ class App(tk.Tk):
                     ac = int(alltime["all_complete"] or 0)
                     ar = int(alltime["all_review"]   or 0)
                     af = int(alltime["all_failed"]   or 0)
+                    at = int(alltime.get("all_total", ac + ar + af) or 0)
                     self._alltime_summary_lbl.config(
-                        text=f"{ac:,}  matched  ·  {ar}  review  ·  {af}  failed")
+                        text=f"{at:,}  total  ·  {ac:,}  matched  ·  {ar}  review  ·  {af}  failed")
                 except Exception:
                     pass
 

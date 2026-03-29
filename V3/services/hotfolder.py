@@ -37,7 +37,7 @@ from V3.core.file_ops import (
     safe_move,
 )
 from V3.audit.logger import audit_event
-from V3.audit.tracker import rebuild_dashboard_now
+from V3.audit.tracker import rebuild_dashboard_now, record_hotfolder_needs_review
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -406,15 +406,28 @@ def main() -> None:
                             f"[ATTEMPT-CAP] {_basename} reached max attempts "
                             f"({_MAX_PIPELINE_ATTEMPTS}) — routing to NEEDS_REVIEW"
                         )
+                        _proc_secs = _file_proc_seconds.get(path, 0.0)
                         try:
                             safe_move(path, config.NEEDS_REVIEW_DIR)
                             _clear_attempt_count(_basename)
                         except Exception as _e:
                             log(f"[ATTEMPT-CAP] Could not move {_basename}: {_e}")
+                        record_hotfolder_needs_review(
+                            _basename,
+                            f"No match after {_MAX_PIPELINE_ATTEMPTS} pipeline attempts",
+                            hotfolder_secs=round(_proc_secs, 2),
+                            detection_method="No Match",
+                            route="NEEDS_REVIEW",
+                        )
                         _file_proc_seconds.pop(path, None)
                         processed_any = True
                         continue
-                    _increment_attempt(_basename)
+                    # Don't increment for files already waiting in the third-pass
+                    # queue — they've already exhausted the long-pass budget and
+                    # are just sitting in INBOX while third-pass is pending.
+                    # Incrementing would cause ATTEMPT-CAP to fire before third-pass runs.
+                    if path not in timeout_deferred_state:
+                        _increment_attempt(_basename)
 
                     if ENABLE_INBOX_TWO_PASS:
                         _t0 = time.perf_counter()
@@ -465,14 +478,22 @@ def main() -> None:
                         _proc_so_far = _file_proc_seconds.get(path, 0.0)
                         _remaining = GLOBAL_DOC_TIMEOUT_SECONDS - _proc_so_far
                         if _remaining <= 0:
+                            _gto_name = os.path.basename(path)
                             log(
-                                f"[GLOBAL-TIMEOUT] {os.path.basename(path)} exceeded "
+                                f"[GLOBAL-TIMEOUT] {_gto_name} exceeded "
                                 f"{GLOBAL_DOC_TIMEOUT_SECONDS:.0f}s processing ({_proc_so_far:.0f}s) — NEEDS_REVIEW"
                             )
                             try:
                                 safe_move(path, config.NEEDS_REVIEW_DIR)
                             except Exception as _e:
-                                log(f"[GLOBAL-TIMEOUT] Could not move {os.path.basename(path)}: {_e}")
+                                log(f"[GLOBAL-TIMEOUT] Could not move {_gto_name}: {_e}")
+                            record_hotfolder_needs_review(
+                                _gto_name,
+                                f"Exceeded global timeout ({_proc_so_far:.0f}s / {GLOBAL_DOC_TIMEOUT_SECONDS:.0f}s)",
+                                hotfolder_secs=round(_proc_so_far, 2),
+                                detection_method="No Match",
+                                route="NEEDS_REVIEW",
+                            )
                             _file_proc_seconds.pop(path, None)
                             processed_any = True
                             _batch_count += 1
@@ -546,18 +567,26 @@ def main() -> None:
                         )
                         _remaining = GLOBAL_DOC_TIMEOUT_SECONDS - _proc_so_far
                         if _remaining <= 0 or tp_attempts >= 1:
-                            _reason = (
-                                f"exceeded {GLOBAL_DOC_TIMEOUT_SECONDS:.0f}s processing ({_proc_so_far:.0f}s)"
+                            _tpl_name = os.path.basename(path)
+                            _tpl_reason = (
+                                f"Exceeded global timeout ({_proc_so_far:.0f}s / {GLOBAL_DOC_TIMEOUT_SECONDS:.0f}s)"
                                 if _remaining <= 0
-                                else f"exhausted third-pass retries ({tp_attempts})"
+                                else f"No match after full pipeline (fast + long + third pass)"
                             )
                             log(
-                                f"[THIRD-PASS-LIMIT] {os.path.basename(path)} {_reason} — routing to NEEDS_REVIEW"
+                                f"[THIRD-PASS-LIMIT] {_tpl_name} {_tpl_reason} — routing to NEEDS_REVIEW"
                             )
                             try:
                                 safe_move(path, config.NEEDS_REVIEW_DIR)
                             except Exception as _e:
-                                log(f"[THIRD-PASS-LIMIT] Could not move {os.path.basename(path)}: {_e}")
+                                log(f"[THIRD-PASS-LIMIT] Could not move {_tpl_name}: {_e}")
+                            record_hotfolder_needs_review(
+                                _tpl_name,
+                                _tpl_reason,
+                                hotfolder_secs=round(_proc_so_far, 2),
+                                detection_method="No Match",
+                                route="NEEDS_REVIEW",
+                            )
                             _file_proc_seconds.pop(path, None)
                             processed_any = True
                             _tp_count += 1

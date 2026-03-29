@@ -567,7 +567,7 @@ def read_alltime_stats() -> dict:
     Only counts rows with definitive results (COMPLETE / NEEDS_REVIEW / FAILED).
     IN-PROGRESS rows are excluded so the total equals resolved files only.
     """
-    defaults = {"all_complete": 0, "all_review": 0, "all_failed": 0}
+    defaults = {"all_total": 0, "all_complete": 0, "all_review": 0, "all_failed": 0}
     try:
         if not _AUDIT_XLSX.exists():
             return defaults
@@ -577,10 +577,13 @@ def read_alltime_stats() -> dict:
             for row in wb[SHEET_HOT].iter_rows(min_row=2, values_only=True):
                 result = str(row[9] or "").upper()
                 if result == "COMPLETE":
+                    stats["all_total"] += 1
                     stats["all_complete"] += 1
                 elif result == "NEEDS_REVIEW":
+                    stats["all_total"] += 1
                     stats["all_review"] += 1
                 elif result == "FAILED":
+                    stats["all_total"] += 1
                     stats["all_failed"] += 1
         wb.close()
         return stats
