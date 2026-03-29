@@ -173,23 +173,33 @@ def _init_dashboard(ws):
 
 
 def _rebuild_dashboard(wb):
-    """Recompute today's stats from the data sheets and overwrite the dashboard."""
+    """Recompute today's and all-time stats and overwrite the dashboard."""
     ws_dash = wb[SHEET_DASH]
     ws_dash.delete_rows(1, ws_dash.max_row or 1)
 
     today = date.today().isoformat()
 
-    # ── Count from HotfolderV2 ───────────────────────────────────────────────
+    # ── Count from HotfolderV2 (today + all-time in one pass) ────────────────
     hot_total = hot_complete = hot_review = hot_failed = 0
+    at_hot_total = at_hot_complete = at_hot_review = at_hot_failed = 0
     hot_secs_list = []
     tier_counts = {"High": 0, "Medium": 0, "Low": 0}
     ws_hot = wb[SHEET_HOT]
     for row in ws_hot.iter_rows(min_row=2, values_only=True):
-        ts = str(row[0] or "")
-        if not ts.startswith(today):
-            continue
         result = str(row[9] or "").upper()
         if result == "IN-PROGRESS":
+            continue
+        # All-time
+        at_hot_total += 1
+        if result == "COMPLETE":
+            at_hot_complete += 1
+        elif result == "NEEDS_REVIEW":
+            at_hot_review += 1
+        elif result == "FAILED":
+            at_hot_failed += 1
+        # Today only
+        ts = str(row[0] or "")
+        if not ts.startswith(today):
             continue
         hot_total += 1
         if result == "COMPLETE":
@@ -207,14 +217,23 @@ def _rebuild_dashboard(wb):
 
     avg_secs = f"{sum(hot_secs_list)/len(hot_secs_list):.1f}s" if hot_secs_list else "N/A"
 
-    # ── Count from EDM ───────────────────────────────────────────────────────
+    # ── Count from EDM (today + all-time) ────────────────────────────────────
     edm_clean = edm_rejected = edm_partial = edm_unchecked = 0
+    at_edm_clean = at_edm_rejected = at_edm_partial = at_edm_unchecked = 0
     ws_edm = wb[SHEET_EDM]
     for row in ws_edm.iter_rows(min_row=2, values_only=True):
+        result = str(row[4] or "").upper()
+        if result == "CLEAN":
+            at_edm_clean += 1
+        elif result == "REJECTED":
+            at_edm_rejected += 1
+        elif result == "PARTIAL-CLEAN":
+            at_edm_partial += 1
+        elif result == "CLEAN-UNCHECKED":
+            at_edm_unchecked += 1
         ts = str(row[0] or "")
         if not ts.startswith(today):
             continue
-        result = str(row[4] or "").upper()
         if result == "CLEAN":
             edm_clean += 1
         elif result == "REJECTED":
@@ -224,20 +243,32 @@ def _rebuild_dashboard(wb):
         elif result == "CLEAN-UNCHECKED":
             edm_unchecked += 1
 
-    edm_total = edm_clean + edm_rejected + edm_partial + edm_unchecked
+    edm_total    = edm_clean + edm_rejected + edm_partial + edm_unchecked
+    at_edm_total = at_edm_clean + at_edm_rejected + at_edm_partial + at_edm_unchecked
     edm_clean_rate = (
         f"{(edm_clean + edm_partial) / edm_total * 100:.0f}%"
         if edm_total else "N/A"
     )
+    at_edm_clean_rate = (
+        f"{(at_edm_clean + at_edm_partial) / at_edm_total * 100:.0f}%"
+        if at_edm_total else "N/A"
+    )
 
-    # ── Count from BatchTIFF ─────────────────────────────────────────────────
+    # ── Count from BatchTIFF (today + all-time) ───────────────────────────────
     batches_built = tiffs_converted = tiffs_failed = 0
+    at_batches_built = at_tiffs_converted = at_tiffs_failed = 0
     ws_batch = wb[SHEET_BATCH]
     for row in ws_batch.iter_rows(min_row=2, values_only=True):
+        etype = str(row[2] or "").upper()
+        if etype == "BATCH_BUILT":
+            at_batches_built += 1
+        elif etype == "TIFF_CONVERTED":
+            at_tiffs_converted += 1
+        elif etype == "TIFF_FAILED":
+            at_tiffs_failed += 1
         ts = str(row[0] or "")
         if not ts.startswith(today):
             continue
-        etype = str(row[2] or "").upper()
         if etype == "BATCH_BUILT":
             batches_built += 1
         elif etype == "TIFF_CONVERTED":
@@ -247,6 +278,7 @@ def _rebuild_dashboard(wb):
 
     last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    # rows = list of (label, today_val, alltime_val, note)
     def _write_section(ws, title, rows):
         title_row = (ws.max_row or 0) + 1
         ws.cell(title_row, 1).value = title
@@ -254,41 +286,56 @@ def _rebuild_dashboard(wb):
         ws.cell(title_row, 1).fill  = _DASH_FILL
         ws.cell(title_row, 2).fill  = _DASH_FILL
         ws.cell(title_row, 3).fill  = _DASH_FILL
-        for label, val, note in rows:
+        ws.cell(title_row, 4).fill  = _DASH_FILL
+        for label, today_val, at_val, note in rows:
             r = (ws.max_row or 0) + 1
             ws.cell(r, 1).value = label
-            ws.cell(r, 2).value = val
+            ws.cell(r, 2).value = today_val
+            ws.cell(r, 3).value = at_val
             if note:
-                ws.cell(r, 3).value = note
+                ws.cell(r, 4).value = note
 
-    _write_section(ws_dash, f"  DASHBOARD -- {today}  (updated {last_updated})", [])
-    _write_section(ws_dash, "  AWB HOTFOLDER (today)", [
-        ("Files Processed",       hot_total,    None),
-        ("  Complete",            hot_complete, None),
-        ("  Needs Review",        hot_review,   "manual check required" if hot_review else None),
-        ("  Failed",              hot_failed,   "check pipeline.log"    if hot_failed else None),
-        ("Avg Processing Time",   avg_secs,     None),
-        ("Tier High (Filename/TextLayer)", tier_counts["High"],   None),
-        ("Tier Medium (OCR-Exact)",        tier_counts["Medium"], None),
-        ("Tier Low (Tolerance/EDM/Other)", tier_counts["Low"],    None),
+    # Header row with column labels
+    hdr_r = 1
+    ws_dash.cell(hdr_r, 1).value = f"  DASHBOARD  —  {today}  (updated {last_updated})"
+    ws_dash.cell(hdr_r, 1).font  = _DASH_FONT
+    ws_dash.cell(hdr_r, 1).fill  = _DASH_FILL
+    ws_dash.cell(hdr_r, 2).value = "TODAY"
+    ws_dash.cell(hdr_r, 2).font  = _DASH_FONT
+    ws_dash.cell(hdr_r, 2).fill  = _DASH_FILL
+    ws_dash.cell(hdr_r, 3).value = "ALL TIME"
+    ws_dash.cell(hdr_r, 3).font  = _DASH_FONT
+    ws_dash.cell(hdr_r, 3).fill  = _DASH_FILL
+    ws_dash.cell(hdr_r, 4).fill  = _DASH_FILL
+
+    _write_section(ws_dash, "  AWB HOTFOLDER", [
+        ("Files Processed",       hot_total,    at_hot_total,    None),
+        ("  Complete",            hot_complete, at_hot_complete, None),
+        ("  Needs Review",        hot_review,   at_hot_review,   "manual check required" if hot_review else None),
+        ("  Failed",              hot_failed,   at_hot_failed,   "check pipeline.log"    if hot_failed else None),
+        ("Avg Processing Time",   avg_secs,     "—",             None),
+        ("Tier High (Filename/TextLayer)", tier_counts["High"],   "—", None),
+        ("Tier Medium (OCR-Exact)",        tier_counts["Medium"], "—", None),
+        ("Tier Low (Tolerance/EDM/Other)", tier_counts["Low"],    "—", None),
     ])
-    _write_section(ws_dash, "  EDM DUPLICATE CHECK (today)", [
-        ("Files Checked",         edm_total,        None),
-        ("  Clean",               edm_clean,        None),
-        ("  Partial-Clean",       edm_partial,      None),
-        ("  Rejected",            edm_rejected,     "duplicates found" if edm_rejected else None),
-        ("  Unchecked (no token)",edm_unchecked,    None),
-        ("Clean Rate",            edm_clean_rate,   None),
+    _write_section(ws_dash, "  EDM DUPLICATE CHECK", [
+        ("Files Checked",          edm_total,       at_edm_total,       None),
+        ("  Clean",                edm_clean,       at_edm_clean,       None),
+        ("  Partial-Clean",        edm_partial,     at_edm_partial,     None),
+        ("  Rejected",             edm_rejected,    at_edm_rejected,    "duplicates found" if edm_rejected else None),
+        ("  Unchecked (no token)", edm_unchecked,   at_edm_unchecked,   None),
+        ("Clean Rate",             edm_clean_rate,  at_edm_clean_rate,  None),
     ])
-    _write_section(ws_dash, "  BATCH & TIFF (today)", [
-        ("Batches Built",         batches_built,    None),
-        ("TIFFs Converted",       tiffs_converted,  None),
-        ("TIFFs Failed",          tiffs_failed,     "check logs" if tiffs_failed else None),
+    _write_section(ws_dash, "  BATCH & TIFF", [
+        ("Batches Built",          batches_built,   at_batches_built,   None),
+        ("TIFFs Converted",        tiffs_converted, at_tiffs_converted, None),
+        ("TIFFs Failed",           tiffs_failed,    at_tiffs_failed,    "check logs" if tiffs_failed else None),
     ])
 
     ws_dash.column_dimensions["A"].width = 38
-    ws_dash.column_dimensions["B"].width = 22
-    ws_dash.column_dimensions["C"].width = 32
+    ws_dash.column_dimensions["B"].width = 14
+    ws_dash.column_dimensions["C"].width = 14
+    ws_dash.column_dimensions["D"].width = 30
 
 
 # ── Detection tier helper ─────────────────────────────────────────────────────
