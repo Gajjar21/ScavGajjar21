@@ -2510,18 +2510,20 @@ def process_pdf(
 
     _skip_rotation = _stable_high_pool_no_db_match()
 
-    # Skip PSM3 table rescue when confidence is high enough that table-layout
-    # preprocessing adds no signal:
-    #   CERTAIN rotation: AWB is at a known non-zero angle — PSM3 on the
-    #     base-angle image sees distorted text.  Skip only when we already have
-    #     quality candidates (cold-start files with no candidates still need it).
-    #   UPRIGHT with stable non-DB pool: same reasoning as _skip_rotation —
-    #     the same candidates keep reappearing without a DB hit, table won't add new ones.
+    # Skip PSM3 table rescue only when we are genuinely confident the AWB has
+    # already been seen at HIGH confidence, OR (UPRIGHT) the same non-DB pool
+    # keeps reappearing (no point re-running table):
+    #   CERTAIN rotation: _run_table_pass renders at base_angle (the detected
+    #     rotation angle, e.g. 270°) — so table CAN find the AWB even on rotated
+    #     docs.  Only skip when running_high is non-empty: HIGH candidates are
+    #     a real signal.  Persistent STANDARD multi-stage candidates are often
+    #     inversion OCR noise and must not trigger a skip (BD_CI_hotizontal class).
+    #   UPRIGHT with stable non-DB pool: same reasoning as _skip_rotation.
     _skip_table = (
         (
             _angle_certainty == "CERTAIN"
             and _margin >= ROTATION_PROBE_CERTAIN_MARGIN
-            and _has_quality_candidates()
+            and bool(running_high)
         )
         or (
             _route == "UPRIGHT"
