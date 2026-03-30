@@ -549,6 +549,17 @@ def process_pdf(
         }
         return bool(persistent)
 
+    def _awb_400_db(text: str | None) -> str | None:
+        """400-pattern extraction with DB check.
+
+        Used for all OCR stages after the text layer.  The text layer keeps
+        the no-DB-check fast path because embedded text is highly reliable.
+        All image-OCR stages require DB confirmation to avoid false positives
+        from secondary reference numbers that share the 400-prefix format.
+        """
+        a = extract_awb_from_400_pattern(text)
+        return a if (a and a in awb_set) else None
+
     # ── PDF page management ─────────────────────────────────────────────────
     page_doc = None
     page = None
@@ -875,7 +886,7 @@ def process_pdf(
                 txt_text = ocr_text_general(preprocess_for_text(crop, invert=False), psm=6)
                 txt_combined = "\n".join([p for p in (txt_text, txt_digits) if p])
 
-                awb_400 = extract_awb_from_400_pattern(txt_digits) or extract_awb_from_400_pattern(txt_text)
+                awb_400 = _awb_400_db(txt_digits) or _awb_400_db(txt_text)
                 if awb_400:
                     timings["ocr_main_ms"] += round((time.perf_counter() - started) * 1000, 1)
                     complete_match(
@@ -978,8 +989,8 @@ def process_pdf(
             for ang in ordered_angles[:3]:
                 _pd_fast, _pg_fast = texts_fast.get(ang, ("", ""))
                 _probe_awb_400_fast = (
-                    extract_awb_from_400_pattern(_pd_fast)
-                    or extract_awb_from_400_pattern(_pg_fast)
+                    _awb_400_db(_pd_fast)
+                    or _awb_400_db(_pg_fast)
                 )
                 if _probe_awb_400_fast:
                     complete_match(
@@ -1071,7 +1082,7 @@ def process_pdf(
             txt_r = get_ocr_digits(DPI_STRONG, rot, thr, inv, psm)
             txt_chunks.append(txt_r)
 
-            awb_400_r = extract_awb_from_400_pattern(txt_r)
+            awb_400_r = _awb_400_db(txt_r)
             if awb_400_r:
                 timings["ocr_strong_ms"] += round((time.perf_counter() - started) * 1000, 1)
                 complete_match(
@@ -1141,7 +1152,7 @@ def process_pdf(
         started = time.perf_counter()
         txt_q = get_ocr_digits(DPI_MAIN, rot, 170, False, 6)
 
-        awb_400_q = extract_awb_from_400_pattern(txt_q)
+        awb_400_q = _awb_400_db(txt_q)
         if awb_400_q:
             timings["ocr_main_ms"] += round((time.perf_counter() - started) * 1000, 1)
             complete_match(
@@ -1286,7 +1297,7 @@ def process_pdf(
         for psm in OCR_MAIN_PSMS:
             txt = get_ocr_digits(DPI_MAIN, _rotation_hint, 170, False, psm)
 
-            awb_400 = extract_awb_from_400_pattern(txt)
+            awb_400 = _awb_400_db(txt)
             if awb_400:
                 timings["ocr_main_ms"] += round((time.perf_counter() - probe_start) * 1000, 1)
                 complete_match(
@@ -1407,7 +1418,7 @@ def process_pdf(
                 crop = img.crop((x1, y1, x2, y2))
                 txt = ocr_digits_only(preprocess(crop, thr=170, invert=False), psm=6)
 
-                awb_400 = extract_awb_from_400_pattern(txt)
+                awb_400 = _awb_400_db(txt)
                 if awb_400:
                     timings["ocr_main_ms"] += round((time.perf_counter() - probe_start) * 1000, 1)
                     complete_match(
@@ -1495,7 +1506,7 @@ def process_pdf(
 
         timings["text_layer_ms"] = round((time.perf_counter() - tl_start) * 1000, 1)
 
-        # 1c. 400-pattern on text layer (no DB check)
+        # 1c. 400-pattern on text layer (no DB check — embedded text is reliable)
         awb_400 = extract_awb_from_400_pattern(txt_layer)
         if awb_400:
             complete_match(awb_400, "TextLayer-400", "Matched via text-layer 400 pattern")
@@ -1634,7 +1645,7 @@ def process_pdf(
             if _budget_exit:
                 return _budget_exit
             txt_m = get_ocr_digits(DPI_MAIN, _ocr_angle, 175, False, _psm)
-            awb_400_m = extract_awb_from_400_pattern(txt_m)
+            awb_400_m = _awb_400_db(txt_m)
             if awb_400_m:
                 timings["ocr_main_ms"] = round((time.perf_counter() - main_start) * 1000, 1)
                 complete_match(awb_400_m, f"OCR-Main-PSM{_psm}-400", "Matched by OCR-main 400 pattern")
@@ -1688,7 +1699,7 @@ def process_pdf(
             return _budget_exit
         txt_ms = get_ocr_text(DPI_MAIN, _ocr_angle, False, 11)
         if not _has_quality_candidates() or not (running_high | running_standard):
-            awb_400_ms = extract_awb_from_400_pattern(txt_ms)
+            awb_400_ms = _awb_400_db(txt_ms)
             if awb_400_ms:
                 timings["ocr_main_ms"] = round((time.perf_counter() - main_start) * 1000, 1)
                 complete_match(awb_400_ms, "OCR-Main-Soft-400", "Matched by OCR-main soft 400 pattern")
@@ -1744,7 +1755,7 @@ def process_pdf(
             if _budget_exit:
                 return _budget_exit
             txt_s = get_ocr_digits(DPI_STRONG, 0, thr, inv, psm)
-            awb_400_s = extract_awb_from_400_pattern(txt_s)
+            awb_400_s = _awb_400_db(txt_s)
             if awb_400_s:
                 timings["ocr_strong_ms"] = round((time.perf_counter() - strong_start) * 1000, 1)
                 complete_match(awb_400_s, f"{stage_nm}-400", f"Matched by {stage_nm} 400 pattern")
@@ -1792,7 +1803,7 @@ def process_pdf(
                 if _budget_exit:
                     return _budget_exit
                 txt_si = get_ocr_digits(DPI_STRONG, 0, thr, inv, psm)
-                awb_400_si = extract_awb_from_400_pattern(txt_si)
+                awb_400_si = _awb_400_db(txt_si)
                 if awb_400_si:
                     timings["ocr_strong_ms"] = round((time.perf_counter() - strong_start) * 1000, 1)
                     complete_match(awb_400_si, f"{stage_nm}-400", f"Matched by {stage_nm} 400 pattern")
@@ -2009,8 +2020,8 @@ def process_pdf(
     if _probe_combined_txt:
         # 400 tight-prefix check
         _probe_awb_400 = (
-            extract_awb_from_400_pattern(_probe_digit_txt)
-            or extract_awb_from_400_pattern(_probe_general_txt)
+            _awb_400_db(_probe_digit_txt)
+            or _awb_400_db(_probe_general_txt)
         )
         if _probe_awb_400:
             complete_match(_probe_awb_400, "Probe-400", "Matched via probe text 400 pattern")
@@ -2058,7 +2069,7 @@ def process_pdf(
             ocr_digits_only(preprocess(roi, thr=170, invert=False), psm=6),
         ])
         # Quick 400 check
-        awb_400_roi = extract_awb_from_400_pattern(txt_roi)
+        awb_400_roi = _awb_400_db(txt_roi)
         if awb_400_roi:
             complete_match(awb_400_roi, f"{stage_name}-400", "Matched by ROI 400 pattern")
             return True
@@ -2142,7 +2153,7 @@ def process_pdf(
                 ocr_text_general(preprocess_for_text(upscaled, invert=False), psm=11),
                 ocr_digits_only(preprocess(upscaled, thr=170, invert=False), psm=6),
             ])
-            awb_400_rsc = extract_awb_from_400_pattern(txt_rsc)
+            awb_400_rsc = _awb_400_db(txt_rsc)
             if awb_400_rsc:
                 timings["ocr_context_ms"] += round((time.perf_counter() - rsc_start) * 1000, 1)
                 complete_match(awb_400_rsc, "OCR-Rescue-Upscaled-400", "Matched by upscale rescue 400")
@@ -2206,7 +2217,7 @@ def process_pdf(
             return False
         table_clean_cache[0] = tbl_img  # store for upscale rescue reuse
         txt_t = ocr_text_general(preprocess_for_text(tbl_img, invert=False), psm=3)
-        awb_400_t = extract_awb_from_400_pattern(txt_t)
+        awb_400_t = _awb_400_db(txt_t)
         if awb_400_t:
             timings["ocr_context_ms"] += round((time.perf_counter() - tbl_start) * 1000, 1)
             complete_match(awb_400_t, "OCR-Table-PSM3-400", "Matched by table pass 400 pattern")
@@ -2300,7 +2311,7 @@ def process_pdf(
             for _pt_src, _pt_label in ((_pt_digits, "ProbeDigits"), (_pt_text, "ProbeText")):
                 if not _pt_src:
                     continue
-                _pt_400 = extract_awb_from_400_pattern(_pt_src)
+                _pt_400 = _awb_400_db(_pt_src)
                 if _pt_400:
                     timings["rotation_ms"] += round((time.perf_counter() - rot_start) * 1000, 1)
                     complete_match(
@@ -2380,7 +2391,7 @@ def process_pdf(
 
             for stage_nm, thr, inv, psm in rot_subpasses:
                 txt_r = get_ocr_digits(DPI_STRONG, rot, thr, inv, psm)
-                awb_400_r = extract_awb_from_400_pattern(txt_r)
+                awb_400_r = _awb_400_db(txt_r)
                 if awb_400_r:
                     timings["rotation_ms"] += round((time.perf_counter() - rot_start) * 1000, 1)
                     complete_match(awb_400_r, f"{stage_nm}-400", f"Matched by {stage_nm} 400 pattern")
@@ -2423,7 +2434,7 @@ def process_pdf(
 
             # Rotation soft pass
             txt_rs = get_ocr_text(DPI_STRONG, rot, False, 11)
-            awb_400_rs = extract_awb_from_400_pattern(txt_rs)
+            awb_400_rs = _awb_400_db(txt_rs)
             if awb_400_rs:
                 timings["rotation_ms"] += round((time.perf_counter() - rot_start) * 1000, 1)
                 complete_match(awb_400_rs, f"OCR-Rotation-{rot}-Soft-400", "Matched by rotation soft 400")
@@ -2598,7 +2609,7 @@ def process_pdf(
                     (f"OCR-AngFallback-{rot}-Inv11",  200, True,  11),
                 ]:
                     txt_fb = get_ocr_digits(DPI_STRONG, rot, thr, inv, psm)
-                    awb_400_fb = extract_awb_from_400_pattern(txt_fb)
+                    awb_400_fb = _awb_400_db(txt_fb)
                     if awb_400_fb:
                         timings["rotation_ms"] += round((time.perf_counter() - rot_fb_start) * 1000, 1)
                         complete_match(awb_400_fb, f"{stage_nm}-400", "Matched in angle fallback")
