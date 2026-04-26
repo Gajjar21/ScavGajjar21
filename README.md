@@ -4,6 +4,19 @@ Automated FedEx document-processing workflow for extracting Air Waybill (AWB) nu
 
 The system is built around a watched `INBOX` folder. PDFs can arrive from multiple sources, then move through AWB extraction, EDM-aware duplicate screening, batch assembly, TIFF conversion, and audit logging.
 
+## Start Here: Visual Walkthrough
+
+**First-time repo viewers should start with the visual process walkthrough:**
+
+[Open the rendered HTML walkthrough](https://htmlpreview.github.io/?https://github.com/Gajjar21/ScavGajjar21/blob/main/awb_pipeline_fedex-2.html)
+
+This page is the fastest way to understand the project end to end. It explains the old manual workflow, the automated document-processing flow, AWB extraction stages, EDM duplicate screening, batch/TIFF output, runtime controls, architecture, risk handling, and current process snapshot.
+
+Repository copy:
+
+- [`awb_pipeline_fedex-2.html`](awb_pipeline_fedex-2.html) — source file in this repo
+- Best local view: open `awb_pipeline_fedex-2.html` directly in a browser
+
 ## What It Does
 
 - Watches `pdf_organizer/INBOX` for incoming PDFs.
