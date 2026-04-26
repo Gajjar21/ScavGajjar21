@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>AWB Pipeline V3 — FedEx Document Automation</title>
+<title>Document Processing Pipeline V3 — FedEx Document Automation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
@@ -418,6 +418,256 @@ code,pre,.mono{font-family:'JetBrains Mono',monospace}
   }
 }
 
+/* ── PHONE LAYOUT (desktop stays unchanged) ───────────────────── */
+@media(max-width:700px){
+  body{
+    font-size:13px;
+    line-height:1.55;
+    background-image:
+      radial-gradient(ellipse 120% 46% at 50% -8%,rgba(77,20,140,0.22) 0%,transparent 62%),
+      radial-gradient(ellipse 70% 35% at 100% 60%,rgba(255,102,0,0.08) 0%,transparent 62%);
+  }
+
+  #sidebar{
+    position:sticky;
+    top:0;
+    width:100%;
+    height:auto;
+    max-height:none;
+    border-right:none;
+    border-bottom:1px solid var(--border);
+    z-index:300;
+  }
+  .sb-top{
+    padding:12px 14px 10px;
+  }
+  .sb-logo-box{
+    width:30px;
+    height:30px;
+    border-radius:8px;
+  }
+  .sb-name{
+    font-size:12.5px;
+    max-width:245px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .sb-ver{
+    font-size:9px;
+  }
+  .sb-nav{
+    display:flex;
+    gap:6px;
+    overflow-x:auto;
+    overflow-y:hidden;
+    padding:8px 10px 10px;
+    scroll-snap-type:x proximity;
+  }
+  .sb-group{
+    display:none;
+  }
+  .nav-btn{
+    width:auto;
+    min-width:max-content;
+    padding:8px 10px;
+    border:1px solid rgba(255,255,255,.08);
+    background:rgba(255,255,255,.025);
+    scroll-snap-align:start;
+    font-size:11.5px;
+  }
+  .nav-btn.on::before{
+    left:10px;
+    top:auto;
+    bottom:0;
+    transform:none;
+    width:calc(100% - 20px);
+    height:2px;
+    border-radius:2px 2px 0 0;
+  }
+  .sb-foot{
+    display:none;
+  }
+
+  #main{
+    margin-left:0;
+    min-height:auto;
+  }
+  #topbar{
+    position:static;
+    padding:10px 14px;
+    gap:10px;
+    align-items:flex-start;
+  }
+  .topbar-title{
+    font-size:13.5px;
+    line-height:1.25;
+  }
+  .topbar-chips{
+    gap:5px;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+  }
+  .chip{
+    padding:2px 7px;
+    font-size:9.5px;
+  }
+
+  .panel{
+    padding:20px 14px 28px;
+    max-width:none;
+  }
+  .sec-title{
+    font-size:24px;
+    line-height:1.12;
+  }
+  .sec-sub{
+    font-size:13px;
+    line-height:1.65;
+    margin-bottom:20px;
+  }
+  .card{
+    padding:15px;
+    border-radius:var(--r-md);
+  }
+
+  .kpi-grid,
+  .g2,
+  .g3,
+  .g4,
+  .g32,
+  .ba-grid{
+    grid-template-columns:1fr !important;
+    gap:12px !important;
+  }
+  .kpi-card{
+    padding:16px 15px;
+  }
+  .kpi-val{
+    font-size:30px;
+  }
+
+  #process-steps{
+    grid-template-columns:1fr !important;
+    gap:9px !important;
+  }
+  .proc-step{
+    align-items:flex-start;
+    text-align:left;
+    min-height:0;
+    display:grid;
+    grid-template-columns:32px 24px 1fr;
+    column-gap:10px;
+    row-gap:2px;
+  }
+  .proc-num{
+    grid-row:1 / span 2;
+  }
+  .proc-icon{
+    grid-row:1 / span 2;
+    margin-top:1px;
+    font-size:16px;
+  }
+  .proc-label,
+  .proc-sub{
+    grid-column:3;
+  }
+
+  .tab-nav{
+    width:100%;
+    overflow-x:auto;
+    flex-wrap:nowrap;
+    padding:4px;
+  }
+  .tab-btn{
+    min-width:max-content;
+    padding:8px 10px;
+    font-size:11.5px;
+  }
+
+  .tbl{
+    min-width:620px;
+    font-size:12px;
+  }
+  .tbl th,
+  .tbl td{
+    padding:9px 10px;
+  }
+
+  #flow-svg-wrap,
+  #p2flow,
+  .code,
+  #terminal{
+    -webkit-overflow-scrolling:touch;
+  }
+  #flow-svg{
+    width:820px;
+    height:auto;
+  }
+  #p2flow{
+    min-width:860px !important;
+  }
+  .flow-detail-box.open{
+    display:block;
+  }
+
+  .acc-head{
+    padding:13px 14px;
+    align-items:flex-start;
+  }
+  .acc.open .acc-body{
+    padding:0 14px 14px;
+  }
+  .stage-pill{
+    flex-shrink:0;
+    font-size:9.5px;
+    padding:3px 9px;
+  }
+
+  .info-box{
+    padding:13px 14px;
+  }
+  .sc-btns{
+    display:grid;
+    grid-template-columns:1fr;
+  }
+  .sc-btn{
+    width:100%;
+  }
+  #terminal{
+    height:340px;
+    font-size:10.5px;
+    padding:14px;
+  }
+}
+
+@media(max-width:420px){
+  .panel{
+    padding-left:12px;
+    padding-right:12px;
+  }
+  .sb-name{
+    max-width:210px;
+  }
+  .nav-btn{
+    font-size:11px;
+    padding:7px 9px;
+  }
+  .topbar-chips .chip-a{
+    display:none;
+  }
+  .sec-title{
+    font-size:22px;
+  }
+  .kpi-val{
+    font-size:28px;
+  }
+  .badge{
+    font-size:9.5px;
+    padding:2px 7px;
+  }
+}
+
 /* ── TOUCH RELIABILITY (iPad/iOS Safari) ───────────────────── */
 button,
 [onclick],
@@ -435,7 +685,7 @@ button,
   <div class="sb-top">
     <div class="sb-brand">
       <div class="sb-logo-box"><i class="fas fa-route" style="color:#fff;font-size:14px"></i></div>
-      <div><div class="sb-name">AWB Pipeline</div><div class="sb-ver">VERSION 3 · PRODUCTION</div></div>
+      <div><div class="sb-name">Document Processing Pipeline</div><div class="sb-ver">V3 · CURRENT PROCESS</div></div>
     </div>
   </div>
   <div class="sb-nav">
@@ -457,12 +707,15 @@ button,
     <div class="sb-group">Engineering</div>
     <button class="nav-btn" onclick="nav(13,this)"><span class="nav-icon"><i class="fas fa-sitemap"></i></span>Technical Architecture</button>
     <button class="nav-btn" onclick="nav(14,this)"><span class="nav-icon"><i class="fas fa-terminal"></i></span>Live Simulation</button>
+    <div class="sb-group">Operations</div>
+    <button class="nav-btn" onclick="nav(17,this)"><span class="nav-icon"><i class="fas fa-sliders"></i></span>Control Centre</button>
+    <button class="nav-btn" onclick="nav(18,this)"><span class="nav-icon"><i class="fas fa-clipboard-check"></i></span>Current Snapshot</button>
     <div class="sb-group">Strategy</div>
     <button class="nav-btn" onclick="nav(15,this)"><span class="nav-icon"><i class="fas fa-triangle-exclamation"></i></span>Risks &amp; Edge Cases</button>
     <button class="nav-btn" onclick="nav(16,this)"><span class="nav-icon"><i class="fas fa-rocket"></i></span>Future Roadmap</button>
   </div>
   <div class="sb-foot">
-    <div class="sb-status"><div class="pulse-dot"></div><span>Pipeline Active · V3</span></div>
+    <div class="sb-status"><div class="pulse-dot"></div><span>Pipeline Active · V3 Current</span></div>
   </div>
 </nav>
 
@@ -479,7 +732,7 @@ button,
   <div class="topbar-chips">
     <span class="chip chip-e"><span style="width:5px;height:5px;background:var(--e400);border-radius:50%;display:inline-block;animation:pulseGlow 2s ease infinite"></span>&nbsp;LIVE</span>
     <span class="chip chip-v">V3</span>
-    <span class="chip chip-a">PRODUCTION</span>
+    <span class="chip chip-a">CURRENT PROCESS</span>
   </div>
 </div>
 
@@ -489,7 +742,7 @@ button,
 <div id="p1" class="panel on">
   <div class="sec-eyebrow">Section 01</div>
   <h2 class="sec-title">Executive Overview</h2>
-  <p class="sec-sub">Plain-English explanation of the AWB Pipeline, its business value, and end-to-end function — written for founders, operators, and leadership.</p>
+  <p class="sec-sub">Plain-English explanation of the Document Processing Pipeline, its business value, and end-to-end function — written for founders, operators, and leadership.</p>
 
 
   <!-- Highlight banner -->
@@ -513,9 +766,9 @@ button,
       <div class="prog"><div class="prog-fill" style="background:var(--a500);width:0" data-w="30"></div></div>
     </div>
     <div class="kpi-card kpi-e">
-      <div class="kpi-label">DB Coverage</div>
-      <div class="kpi-val" data-count="300" data-suffix="k+">300k+</div>
-      <div class="kpi-note">live AWB references validated</div>
+      <div class="kpi-label">DB Source</div>
+      <div class="kpi-val">Excel</div>
+      <div class="kpi-note">AWB set reloads every 30s</div>
       <div class="prog"><div class="prog-fill" style="background:var(--e500);width:0" data-w="100"></div></div>
     </div>
     <div class="kpi-card kpi-b">
@@ -528,9 +781,9 @@ button,
 
   <!-- What it is -->
   <div class="card" style="margin-bottom:20px">
-    <h3 style="font-size:17px;font-weight:800;margin-bottom:12px;font-family:'Outfit',sans-serif">What is the AWB Pipeline?</h3>
-    <p style="color:var(--t3);line-height:1.85;margin-bottom:12px">The AWB Pipeline is an automated document processing system built for FedEx shipment operations. It watches a local "hot-folder" (INBOX), and whenever a new PDF arrives — whether an Air Waybill, commercial invoice, or packing list — it immediately identifies the 12-digit Air Waybill Number embedded in that document.</p>
-  <p style="color:var(--t3);line-height:1.85">Once the AWB is confirmed against a live database of 70,000+ known shipment numbers, the system automatically renames the file, moves it to the correct folder, and records every action in multiple audit trails. Runtime is typically sub-second for easy filename/text-layer matches and can extend to tens of seconds for hard rotated/OCR rescue documents — all without a human touching a keyboard.</p>
+    <h3 style="font-size:17px;font-weight:800;margin-bottom:12px;font-family:'Outfit',sans-serif">What is the Document Processing Pipeline?</h3>
+    <p style="color:var(--t3);line-height:1.85;margin-bottom:12px">The Document Processing Pipeline is an automated document processing system built for FedEx shipment operations. It watches a local "hot-folder" (INBOX), and whenever a new PDF arrives — whether an Air Waybill, commercial invoice, or packing list — it immediately identifies the 12-digit Air Waybill Number embedded in that document.</p>
+    <p style="color:var(--t3);line-height:1.85">Once the AWB is confirmed against the live Excel-backed AWB set, the system automatically renames the file, moves it to the correct folder, and records every action in multiple audit trails. Runtime is typically sub-second for easy filename/text-layer matches and can extend to tens of seconds for hard rotated/OCR rescue documents — all without a human touching a keyboard.</p>
   </div>
 
   <!-- Before / After -->
@@ -549,7 +802,7 @@ button,
           <div class="proc-num" style="background:var(--r100);border:1px solid rgba(239,68,68,.3);color:var(--r400)">01</div>
           <div class="proc-icon" style="color:var(--r400)"><i class="fas fa-file-import"></i></div>
           <div class="proc-label">Document Received</div>
-          <div class="proc-sub">PDF arrives via email or EDM portal download</div>
+          <div class="proc-sub">PDF arrived from multiple sources</div>
         </div>
         <div class="proc-step" data-n="2">
           <div class="proc-num" style="background:var(--r100);border:1px solid rgba(239,68,68,.3);color:var(--r400)">02</div>
@@ -583,7 +836,7 @@ button,
         </div>
         <div class="proc-step" data-n="7">
           <div class="proc-num" style="background:var(--r100);border:1px solid rgba(239,68,68,.3);color:var(--r400)">07</div>
-          <div class="proc-icon" style="color:var(--r400)"><i class="fas fa-scanner"></i></div>
+          <div class="proc-icon" style="color:var(--r400)"><i class="fas fa-file-image"></i></div>
           <div class="proc-label">Scan Physical Batch</div>
           <div class="proc-sub">Entire paper stack fed through physical scanner</div>
         </div>
@@ -612,7 +865,7 @@ button,
     <div style="height:1px;background:linear-gradient(to right,transparent,rgba(123,47,190,.4),transparent);margin-bottom:12px"></div>
     <div style="display:inline-flex;align-items:center;gap:10px;background:linear-gradient(135deg,rgba(123,47,190,.18),rgba(16,185,129,.1));border:1px solid rgba(123,47,190,.28);border-radius:24px;padding:8px 20px">
       <i class="fas fa-arrow-down" style="color:var(--v400);font-size:13px"></i>
-      <span style="font-family:'Outfit',sans-serif;font-size:13px;font-weight:700;color:var(--v300)">AWB Pipeline V3 replaces all 7 steps</span>
+      <span style="font-family:'Outfit',sans-serif;font-size:13px;font-weight:700;color:var(--v300)">Document Processing Pipeline V3 replaces all 7 steps</span>
       <i class="fas fa-arrow-down" style="color:var(--v400);font-size:13px"></i>
     </div>
     <div style="height:1px;background:linear-gradient(to right,transparent,rgba(16,185,129,.4),transparent);margin-top:12px"></div>
@@ -630,10 +883,10 @@ button,
       <div style="background:var(--e100);border:1px solid rgba(16,185,129,.25);border-radius:12px;padding:14px">
         <div style="width:30px;height:30px;border-radius:8px;background:rgba(16,185,129,.2);display:flex;align-items:center;justify-content:center;margin-bottom:10px"><i class="fas fa-magnifying-glass" style="color:var(--e400);font-size:12px"></i></div>
         <div style="font-size:12px;font-weight:700;color:var(--e400);margin-bottom:4px">AWB Auto-Extracted</div>
-        <div style="font-size:11.5px;color:var(--t3)">Up to 8 pipeline stages find and verify the 12-digit AWB against 70k+ records.</div>
+        <div style="font-size:11.5px;color:var(--t3)">Stages 0–7 find and verify the 12-digit AWB against the currently loaded Excel AWB set.</div>
       </div>
       <div style="background:var(--e100);border:1px solid rgba(16,185,129,.25);border-radius:12px;padding:14px">
-        <div style="width:30px;height:30px;border-radius:8px;background:rgba(16,185,129,.2);display:flex;align-items:center;justify-content:center;margin-bottom:10px"><i class="fas fa-shield-check" style="color:var(--e400);font-size:12px"></i></div>
+        <div style="width:30px;height:30px;border-radius:8px;background:rgba(16,185,129,.2);display:flex;align-items:center;justify-content:center;margin-bottom:10px"><i class="fas fa-circle-check" style="color:var(--e400);font-size:12px"></i></div>
         <div style="font-size:12px;font-weight:700;color:var(--e400);margin-bottom:4px">Duplicate Check</div>
         <div style="font-size:11.5px;color:var(--t3)">EDM API check + MD5 hash dedup catches any document submitted more than once.</div>
       </div>
@@ -648,12 +901,12 @@ button,
   <!-- Comparison table -->
   <div style="overflow-x:auto;margin-bottom:8px">
     <table class="tbl" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden">
-      <thead><tr><th>Metric</th><th style="color:var(--r400)">Manual Process</th><th style="color:var(--e400)">AWB Pipeline V3</th></tr></thead>
+      <thead><tr><th>Metric</th><th style="color:var(--r400)">Manual Process</th><th style="color:var(--e400)">Document Processing Pipeline V3</th></tr></thead>
       <tbody>
         <tr><td style="font-weight:600;color:var(--t2)">Steps per batch</td><td style="color:var(--r400)">7 manual steps</td><td style="color:var(--e400)">1 — drop file in INBOX</td></tr>
         <tr><td style="font-weight:600;color:var(--t2)">AWB identification</td><td style="color:var(--r400)">Human reads &amp; types manually</td><td style="color:var(--e400)">Automated OCR + DB verify</td></tr>
         <tr><td style="font-weight:600;color:var(--t2)">Barcode generation</td><td style="color:var(--r400)">Manual software entry per AWB</td><td style="color:var(--e400)">Auto-generated with batch cover page</td></tr>
-        <tr><td style="font-weight:600;color:var(--t2)">Duplicate detection</td><td style="color:var(--r400)">None — manual check only</td><td style="color:var(--e400)">MD5 hash + EDM API check</td></tr>
+        <tr><td style="font-weight:600;color:var(--t2)">Duplicate detection</td><td style="color:var(--r400)">None — manual check only</td><td style="color:var(--e400)">EDM gate/layer screening with HASH, PHASH, TEXT, and OCR signals</td></tr>
         <tr><td style="font-weight:600;color:var(--t2)">Error source</td><td style="color:var(--r400)">Typos in manual AWB entry</td><td style="color:var(--e400)">Zero false positives — DB-verified only</td></tr>
         <tr><td style="font-weight:600;color:var(--t2)">Audit trail</td><td style="color:var(--r400)">None</td><td style="color:var(--e400)">JSONL + Excel + 4-sheet workbook</td></tr>
         <tr><td style="font-weight:600;color:var(--t2)">Processing speed</td><td style="color:var(--r400)">Minutes per document</td><td style="color:var(--e400)">&lt;100ms – 20s per document</td></tr>
@@ -1367,8 +1620,8 @@ button,
       <div class="card card-lift" style="border-color:rgba(59,130,246,.2)">
         <div style="width:36px;height:36px;border-radius:10px;background:var(--b100);display:flex;align-items:center;justify-content:center;margin-bottom:12px"><i class="fas fa-align-left" style="color:var(--b400)"></i></div>
         <div style="font-weight:700;font-size:13px;margin-bottom:5px">Layer 3 — OCR Text Similarity</div>
-        <p style="font-size:12.5px;color:var(--t3);line-height:1.7">RapidFuzz text similarity on OCR/text-layer content with layered safeguards: text-vs-text only when both sides have enough embedded text, OCR fallback when one side lacks text layer. Threshold: similarity ≥ 85%.</p>
-        <div style="margin-top:10px"><span class="badge bb">Threshold: ≥85%</span></div>
+        <p style="font-size:12.5px;color:var(--t3);line-height:1.7">RapidFuzz text similarity on OCR/text-layer content with layered safeguards: text-vs-text only when both sides have enough embedded text, OCR fallback when one side lacks text layer. Similarity ≥60% is tracked; ≥85% becomes a strong text signal.</p>
+        <div style="margin-top:10px"><span class="badge bb">Track: ≥60%</span> <span class="badge bv">Strong: ≥85%</span></div>
       </div>
     </div>
     <div class="g2">
@@ -1582,7 +1835,8 @@ dup_ratio = dup_pages / max(total_pages, 1)<br>
               <div style="font-size:11.5px;color:var(--t3);line-height:1.6;margin-bottom:8px">Text-layer compare (only when both sides have enough chars) plus OCR fallback for mixed text/image pages. Catches rescanned content.</div>
               <div style="display:flex;gap:5px;flex-wrap:wrap">
                 <span class="badge bb" style="font-size:9px">rapidfuzz</span>
-                <span class="badge bb" style="font-size:9px">≥85% similar</span>
+                <span class="badge bb" style="font-size:9px">≥60% tracked</span>
+                <span class="badge bv" style="font-size:9px">≥85% strong</span>
                 <span class="badge ba" style="font-size:9px">8 pages max</span>
                 <span class="badge br" style="font-size:9px">auto: 5pp ≥70%</span>
               </div>
@@ -1629,7 +1883,7 @@ dup_ratio = dup_pages / max(total_pages, 1)<br>
 
     <div class="acc"><div class="acc-head" onclick="acc(this)"><div style="display:flex;align-items:center;gap:10px"><span class="badge bv">Layer 2</span><span style="font-weight:700;font-size:13px">Perceptual Hash — Visual Fingerprint</span></div><i class="fas fa-chevron-down acc-chevron"></i></div><div class="acc-body"><div class="acc-inner"><p style="margin-bottom:8px">Uses the <code>ImageHash</code> library to compute a perceptual hash of each page render. Hamming distance between two pHash values ≤ 10 → duplicate. Catches near-identical documents that differ only in metadata, compression level, or minor encoding artefacts. OCR compare limit caps checked pages at 10.</p><div style="display:flex;gap:7px;flex-wrap:wrap"><span class="badge bv">Threshold: distance ≤ 10</span><span class="badge bb">Page limit: 10</span><span class="badge ba">Library: ImageHash</span></div></div></div></div>
 
-    <div class="acc"><div class="acc-head" onclick="acc(this)"><div style="display:flex;align-items:center;gap:10px"><span class="badge bb">Layer 3</span><span style="font-weight:700;font-size:13px">OCR/Text Similarity — Content Match</span></div><i class="fas fa-chevron-down acc-chevron"></i></div><div class="acc-body"><div class="acc-inner"><p style="margin-bottom:8px">When hashes differ but content may still be duplicated (for example re-scanned paper), text comparison runs with safeguards: text-layer compare only when both pages have enough embedded text; otherwise OCR fallback compares mixed text/image pages. Score ≥ 85% flags similarity, but non-destructive routing still requires strong duplicate evidence for auto-reject decisions.</p><div style="display:flex;gap:7px;flex-wrap:wrap"><span class="badge bb">Similarity threshold: 85%</span><span class="badge bb">Page OCR limit: 8</span><span class="badge bv">Library: rapidfuzz</span><span class="badge ba">Strong reject methods: HASH/PHASH</span></div></div></div></div>
+    <div class="acc"><div class="acc-head" onclick="acc(this)"><div style="display:flex;align-items:center;gap:10px"><span class="badge bb">Layer 3</span><span style="font-weight:700;font-size:13px">OCR/Text Similarity — Content Match</span></div><i class="fas fa-chevron-down acc-chevron"></i></div><div class="acc-body"><div class="acc-inner"><p style="margin-bottom:8px">When hashes differ but content may still be duplicated (for example re-scanned paper), text comparison runs with safeguards: text-layer compare only when both pages have enough embedded text; otherwise OCR fallback compares mixed text/image pages. Score ≥60% is recorded as TEXT; score ≥85% is recorded as TEXT_STRONG. Conservative routing still requires strong evidence for auto-reject decisions.</p><div style="display:flex;gap:7px;flex-wrap:wrap"><span class="badge bb">Similarity threshold: 60%</span><span class="badge bv">Strong threshold: 85%</span><span class="badge bb">Page OCR limit: 8</span><span class="badge bv">Library: rapidfuzz</span><span class="badge ba">Strong methods: HASH/PHASH/TEXT_STRONG</span></div></div></div></div>
   </div>
 
 
@@ -1639,7 +1893,8 @@ dup_ratio = dup_pages / max(total_pages, 1)<br>
       <thead><tr><th>Config Key</th><th>Default</th><th>What It Controls</th></tr></thead>
       <tbody>
         <tr><td><code>PHASH_THRESHOLD</code></td><td><span class="badge bv">10</span></td><td>Maximum pHash Hamming distance to classify as visual duplicate. Lower = stricter.</td></tr>
-        <tr><td><code>TEXT_SIMILARITY_THRESHOLD</code></td><td><span class="badge bv">85</span></td><td>Minimum RapidFuzz similarity % for OCR text duplicate match.</td></tr>
+        <tr><td><code>TEXT_SIMILARITY_THRESHOLD</code></td><td><span class="badge bv">60</span></td><td>Minimum RapidFuzz similarity % to record a TEXT duplicate signal.</td></tr>
+        <tr><td><code>TEXT_STRONG_THRESHOLD</code></td><td><span class="badge bv">85</span></td><td>Minimum RapidFuzz similarity % to promote TEXT to TEXT_STRONG evidence.</td></tr>
         <tr><td><code>PAGE_OCR_LIMIT</code></td><td><span class="badge bb">8</span></td><td>Maximum pages to OCR-compare per document during similarity check.</td></tr>
         <tr><td><code>EDM_OCR_COMPARE_LIMIT</code></td><td><span class="badge bb">10</span></td><td>Tier-2 OCR compare limit during heavy matching.</td></tr>
         <tr><td><code>EDM_TIER1_INCOMING_PAGES</code></td><td><span class="badge bb">3</span></td><td>Seed size for Gate-2 incoming probe sampling.</td></tr>
@@ -2124,7 +2379,7 @@ MAX_PAGES_PER_BATCH=<span class="num">48</span>  TIFF_DPI=<span class="num">200<
   <div class="term-wrap">
     <div class="term-bar">
       <div class="td" style="background:#EF4444"></div><div class="td" style="background:#FF6600"></div><div class="td" style="background:#10B981"></div>
-      <span class="term-title">AWB Pipeline V3 — pipeline.log</span>
+      <span class="term-title">Document Processing Pipeline V3 — pipeline.log</span>
       <div class="term-running" id="term-running"><div style="width:6px;height:6px;background:var(--e400);border-radius:50%;animation:pulseGlow 1.5s ease infinite"></div>RUNNING</div>
     </div>
     <div id="terminal"><span class="log-dim">// Select a scenario above to begin the simulation</span><br><span class="log-dim">// Log entries will stream in real time below</span></div>
@@ -2145,7 +2400,7 @@ MAX_PAGES_PER_BATCH=<span class="num">48</span>  TIFF_DPI=<span class="num">200<
     <div class="acc"><div class="acc-head" onclick="acc(this)"><div style="display:flex;align-items:center;gap:10px"><span class="badge sev-h" style="flex-shrink:0;min-width:44px;justify-content:center">HIGH</span><span style="font-weight:700;font-size:14px">Same AWB in Multiple INBOX Files</span></div><i class="fas fa-chevron-down acc-chevron"></i></div><div class="acc-body"><div class="acc-inner"><p>Multiple PDFs can arrive containing the same AWB — re-downloads from EDM or duplicates sent by shippers. Each is processed independently. At the PROCESSED level, MD5 comparison catches byte-for-byte identical files. Different content with same AWB gets an auto-incrementing suffix (_2, _3). The audit tracker creates separate rows per file (not per AWB), which is correct but requires join logic for per-AWB reporting.</p></div></div></div>
     <div class="acc"><div class="acc-head" onclick="acc(this)"><div style="display:flex;align-items:center;gap:10px"><span class="badge sev-m" style="flex-shrink:0;min-width:44px;justify-content:center">MED</span><span style="font-weight:700;font-size:14px">OCR Digit Misread (1–2 digit errors)</span></div><i class="fas fa-chevron-down acc-chevron"></i></div><div class="acc-body"><div class="acc-inner"><p>Tesseract commonly misreads 0↔8, 1↔7, 5↔6 in compressed scans. Hamming tolerance (≤2 for HIGH, ≤1 for STANDARD) handles this — but only when the candidate has been seen in multiple stages. The stage-hits requirement prevents a single noisy pass from generating a tolerance match. Risk is higher for AWBs differing from each other by only 1–2 digits, guarded by the unique-match requirement (no ties allowed).</p></div></div></div>
     <div class="acc"><div class="acc-head" onclick="acc(this)"><div style="display:flex;align-items:center;gap:10px"><span class="badge sev-m" style="flex-shrink:0;min-width:44px;justify-content:center">MED</span><span style="font-weight:700;font-size:14px">Rotation Probe Choosing the Wrong Angle</span></div><i class="fas fa-chevron-down acc-chevron"></i></div><div class="acc-body"><div class="acc-inner"><p>The probe can be misled by documents with large blocks of digits at non-AWB angles (barcodes, HS code tables). Stage 4 rotation fallback mitigates this by running OCR at remaining angles. The 80-point flip margin threshold guards against switching from 0° without strong evidence. The quarantine logic prevents any rotation fallback candidates from being accepted without multi-stage confirmation.</p></div></div></div>
-    <div class="acc"><div class="acc-head" onclick="acc(this)"><div style="display:flex;align-items:center;gap:10px"><span class="badge sev-m" style="flex-shrink:0;min-width:44px;justify-content:center">MED</span><span style="font-weight:700;font-size:14px">HS Codes and Phone Numbers as False Candidates</span></div><i class="fas fa-chevron-down acc-chevron"></i></div><div class="acc-body"><div class="acc-inner"><p>Commercial invoices contain many 12-digit sequences: HS commodity codes, phone numbers with country codes, and reference numbers. The disqualification filter catches leading-zero sequences and date patterns. For remaining false candidates, the DB check is the final gate — unless the false candidate coincidentally matches a valid AWB in the 70k+ database (rare but theoretically possible). Stage-hits requirement reduces this risk significantly.</p></div></div></div>
+    <div class="acc"><div class="acc-head" onclick="acc(this)"><div style="display:flex;align-items:center;gap:10px"><span class="badge sev-m" style="flex-shrink:0;min-width:44px;justify-content:center">MED</span><span style="font-weight:700;font-size:14px">HS Codes and Phone Numbers as False Candidates</span></div><i class="fas fa-chevron-down acc-chevron"></i></div><div class="acc-body"><div class="acc-inner"><p>Commercial invoices contain many 12-digit sequences: HS commodity codes, phone numbers with country codes, and reference numbers. The disqualification filter catches leading-zero sequences and date patterns. For remaining false candidates, the DB check is the final gate — unless the false candidate coincidentally matches a currently loaded AWB record (rare but theoretically possible). Stage-hits requirement reduces this risk significantly.</p></div></div></div>
     <div class="acc"><div class="acc-head" onclick="acc(this)"><div style="display:flex;align-items:center;gap:10px"><span class="badge sev-m" style="flex-shrink:0;min-width:44px;justify-content:center">MED</span><span style="font-weight:700;font-size:14px">EDM Token Expiry During Session</span></div><i class="fas fa-chevron-down acc-chevron"></i></div><div class="acc-body"><div class="acc-inner"><p>The EDM Bearer token in <code>data/token.txt</code> can expire after a few hours. In V3 this is fail-safe: Stage 6 logs a warning and returns an unchecked path (<code>None</code>), so the pipeline continues without hard failure. The UI toggle can also set EDM OFF, which intentionally bypasses API calls until token/auth is restored.</p></div></div></div>
     <div class="acc"><div class="acc-head" onclick="acc(this)"><div style="display:flex;align-items:center;gap:10px"><span class="badge sev-l" style="flex-shrink:0;min-width:44px;justify-content:center">LOW</span><span style="font-weight:700;font-size:14px">AWB Excel DB Out of Sync (stale mtime on NFS/SMB)</span></div><i class="fas fa-chevron-down acc-chevron"></i></div><div class="acc-body"><div class="acc-inner"><p>DB refreshes every 30s by mtime comparison. On some NFS and SMB mounts, mtime doesn't reflect changes correctly — the pipeline may operate on a stale AWB set for up to 30 seconds. The UI can force an immediate reload via the trigger file. Files that fail to match during a stale window route to NEEDS_REVIEW and can be retried after DB refresh.</p></div></div></div>
     <div class="acc"><div class="acc-head" onclick="acc(this)"><div style="display:flex;align-items:center;gap:10px"><span class="badge sev-l" style="flex-shrink:0;min-width:44px;justify-content:center">LOW</span><span style="font-weight:700;font-size:14px">Audit Lock File Contention at Scale</span></div><i class="fas fa-chevron-down acc-chevron"></i></div><div class="acc-body"><div class="acc-inner"><p>The 4-sheet audit workbook uses a file-lock pattern. If two pipeline processes attempt to write simultaneously, one waits up to 15 seconds. Locks held &gt;30s are forcibly cleared. In a single-operator, single-process deployment this is rarely a problem, but at scale (multiple simultaneous pipeline instances) this becomes a serialisation bottleneck. Solution: switch to append-only SQLite audit store.</p></div></div></div>
@@ -2166,18 +2421,116 @@ MAX_PAGES_PER_BATCH=<span class="num">48</span>  TIFF_DPI=<span class="num">200<
   </div>
 </div>
 
+<!-- ═══════════════════════════════════════
+     SECTION 17 — CONTROL CENTRE
+═══════════════════════════════════════ -->
+<div id="p17" class="panel">
+  <div class="sec-eyebrow">Section 17</div>
+  <h2 class="sec-title">Operator Control Centre</h2>
+  <p class="sec-sub">The current Tkinter app is the live command surface: login, hotfolder control, EDM runtime toggle, automatic orchestration, manual batch/TIFF actions, folder counts, logs, and safe cleanup.</p>
+
+  <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:22px">
+    <div class="kpi-card kpi-v"><div class="kpi-label">Primary Runtime</div><div class="kpi-val">Tk</div><div class="kpi-note">V3.ui.app_window.App</div></div>
+    <div class="kpi-card kpi-a"><div class="kpi-label">Auto Interval</div><div class="kpi-val">10s</div><div class="kpi-note">AUTO_INTERVAL_SEC default</div></div>
+    <div class="kpi-card kpi-e"><div class="kpi-label">Batch Gate</div><div class="kpi-val">2</div><div class="kpi-note">min clean batches before AUTO build</div></div>
+    <div class="kpi-card kpi-b"><div class="kpi-label">Manual Escape</div><div class="kpi-val">Live</div><div class="kpi-note">operators can intervene at every folder</div></div>
+  </div>
+
+  <div class="g2" style="margin-bottom:20px">
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><i class="fas fa-play" style="color:var(--e400)"></i><span style="font-weight:800;font-size:14px;font-family:'Outfit',sans-serif">Primary Controls</span></div>
+      <div style="display:flex;flex-direction:column;gap:9px;font-size:13px;color:var(--t3);line-height:1.7">
+        <div><span class="badge be" style="margin-right:7px">Start AWB</span>Starts or stops the watchdog hotfolder process and the EDM duplicate checker when enabled.</div>
+        <div><span class="badge bv" style="margin-right:7px">EDM ON/OFF</span>Writes the runtime toggle in <code>data/edm_toggle.json</code>; Stage 6 and downstream duplicate checks read it live.</div>
+        <div><span class="badge ba" style="margin-right:7px">AUTO MODE</span>Runs the unattended loop: wait for INBOX drain, wait for PROCESSED drain, batch when ready, then convert TIFF.</div>
+        <div><span class="badge bb" style="margin-right:7px">Full Cycle</span>Runs one supervised cycle without leaving the app in continuous automation mode.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><i class="fas fa-toolbox" style="color:var(--a400)"></i><span style="font-weight:800;font-size:14px;font-family:'Outfit',sans-serif">Recovery + Manual Actions</span></div>
+      <div style="display:flex;flex-direction:column;gap:9px;font-size:13px;color:var(--t3);line-height:1.7">
+        <div><span class="badge ba" style="margin-right:7px">Prepare Batch</span>Runs <code>V3.services.batch_builder</code> against CLEAN and stages outputs into PENDING_PRINT.</div>
+        <div><span class="badge bc" style="margin-right:7px">Convert TIFF</span>Runs the parallel PDF-to-TIFF converter beside the batch PDFs.</div>
+        <div><span class="badge br" style="margin-right:7px">Retry Failed</span>Moves NEEDS_REVIEW PDFs back into INBOX for another pass after DB/token/input fixes.</div>
+        <div><span class="badge bgr" style="margin-right:7px">Clear All</span>Stops running work, preserves protected files, and clears operational working outputs safely.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="overflow-x:auto;margin-bottom:20px">
+    <table class="tbl" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden">
+      <thead><tr><th>Auto Phase</th><th>Current Behavior</th><th>Safety Guard</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge be">1</span> INBOX drain</td><td>Waits until INBOX stays empty for <code>INBOX_EMPTY_STABLE_SECONDS=8</code>.</td><td>Max wait <code>1800s</code>; stop event checked every half second.</td></tr>
+        <tr><td><span class="badge bv">2</span> PROCESSED drain</td><td>Lets the EDM duplicate checker move matched files into CLEAN, REJECTED, or CLEAN-UNCHECKED.</td><td>If EDM checker is not running, direct PROCESSED-to-CLEAN fallback is logged.</td></tr>
+        <tr><td><span class="badge ba">3</span> Batch readiness</td><td>Estimates batch count before building; default AUTO build waits for at least 2 batches.</td><td>Force-batches old CLEAN files after <code>AUTO_FORCE_BATCH_AGE_SECONDS=1800</code>.</td></tr>
+        <tr><td><span class="badge bc">4</span> TIFF conversion</td><td>Runs after successful batch copy to PENDING_PRINT.</td><td>Skip-if-exists prevents repeat conversion of healthy TIFFs.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="info-box info-v">
+    <i class="fas fa-circle-info info-icon" style="color:var(--v400)"></i>
+    <div style="font-size:13px;color:var(--t2);line-height:1.8"><strong>Current operator model:</strong> the app is intentionally local-first. It uses folder counts, line-capped colored logs, progress animation, session state, protected-file cleanup rules, and one-click launchers instead of requiring a browser server or external queue service.</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     SECTION 18 — CURRENT SNAPSHOT
+═══════════════════════════════════════ -->
+<div id="p18" class="panel">
+  <div class="sec-eyebrow">Section 18</div>
+  <h2 class="sec-title">Current Process Snapshot</h2>
+  <p class="sec-sub">A concise version map of the repo as it exists now: what is live, what is configurable, and which files own each part of the process.</p>
+
+  <div class="g3" style="margin-bottom:20px">
+    <div class="card card-lift"><div style="width:36px;height:36px;border-radius:9px;background:var(--e100);display:flex;align-items:center;justify-content:center;margin-bottom:12px"><i class="fas fa-check" style="color:var(--e400)"></i></div><div style="font-weight:800;font-size:14px;margin-bottom:7px">Live In V3</div><p style="font-size:12.5px;color:var(--t3);line-height:1.75">Two-pass hotfolder, fast-lane ProbeLite, long-pass timeout, third-pass resume, Stage-6 EDM fallback, downstream EDM duplicate checker, batch builder, TIFF converter, and Tk control centre.</p></div>
+    <div class="card card-lift"><div style="width:36px;height:36px;border-radius:9px;background:var(--a100);display:flex;align-items:center;justify-content:center;margin-bottom:12px"><i class="fas fa-gear" style="color:var(--a400)"></i></div><div style="font-weight:800;font-size:14px;margin-bottom:7px">Config Driven</div><p style="font-size:12.5px;color:var(--t3);line-height:1.75">Paths, Tesseract, OCR DPI, rotation thresholds, EDM endpoints, duplicate thresholds, batch limits, TIFF settings, and AUTO mode timing all flow through <code>V3/config.py</code> and <code>.env</code>.</p></div>
+    <div class="card card-lift"><div style="width:36px;height:36px;border-radius:9px;background:var(--b100);display:flex;align-items:center;justify-content:center;margin-bottom:12px"><i class="fas fa-clipboard-list" style="color:var(--b400)"></i></div><div style="font-weight:800;font-size:14px;margin-bottom:7px">Documented Now</div><p style="font-size:12.5px;color:var(--t3);line-height:1.75">README, operations runbook, and this visual guide now line up around the same end-to-end flow: INBOX -> PROCESSED -> CLEAN/REJECTED -> OUT -> PENDING_PRINT.</p></div>
+  </div>
+
+  <div style="overflow-x:auto;margin-bottom:20px">
+    <table class="tbl" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden">
+      <thead><tr><th>Process Area</th><th>Owner File</th><th>Current Responsibility</th></tr></thead>
+      <tbody>
+        <tr><td>Launcher + App Entry</td><td><code>V3/launcher.py</code>, <code>V3/app.py</code></td><td>Starts the branded UI and cross-platform control surface.</td></tr>
+        <tr><td>Configuration</td><td><code>V3/config.py</code></td><td>Centralizes paths, feature flags, timeouts, thresholds, EDM endpoints, and TIFF/batch settings.</td></tr>
+        <tr><td>Hotfolder Scheduler</td><td><code>V3/services/hotfolder.py</code></td><td>Watchdog queue, AWB DB refresh, fast lane, long pass, timeout resume, heartbeat, attempt caps.</td></tr>
+        <tr><td>AWB Extraction</td><td><code>V3/stages/pipeline.py</code></td><td>Stages 0-7, OCR, rotation, rescue passes, EDM persistence fallback, diagnostics.</td></tr>
+        <tr><td>Duplicate Screening</td><td><code>V3/services/edm_duplicate_checker.py</code></td><td>EDM metadata/download, Gate 1 hash, Gate 2 probes, Tier 2 HASH/PHASH/TEXT/OCR compare, routing.</td></tr>
+        <tr><td>Batch Assembly</td><td><code>V3/services/batch_builder.py</code></td><td>Scans CLEAN, sequences AWBs, writes barcode covers, atomic print-stack PDFs, copies to PENDING_PRINT.</td></tr>
+        <tr><td>TIFF Output</td><td><code>V3/services/tiff_converter.py</code></td><td>Parallel, streaming multi-page TIFF generation beside print-stack PDFs.</td></tr>
+        <tr><td>Audit + Logs</td><td><code>V3/audit/*</code>, <code>logs/*</code></td><td>Structured JSONL events, dashboard rebuilds, workbook trackers, pipeline and EDM logs.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="g2">
+    <div class="card">
+      <div style="font-weight:800;font-size:14px;font-family:'Outfit',sans-serif;margin-bottom:10px"><i class="fas fa-code-branch" style="color:var(--v400);margin-right:8px"></i>Unreleased Documentation Delta</div>
+      <p style="font-size:13px;color:var(--t3);line-height:1.8">The current changelog records documentation alignment work as <span class="badge bv">Unreleased</span>: README and operations docs were updated for ProbeLite, third-pass resume, EDM Stage 6, downstream duplicate routing, current config keys, and controlled shutdown behavior.</p>
+    </div>
+    <div class="card">
+      <div style="font-weight:800;font-size:14px;font-family:'Outfit',sans-serif;margin-bottom:10px"><i class="fas fa-triangle-exclamation" style="color:var(--a400);margin-right:8px"></i>Reality Check</div>
+      <p style="font-size:13px;color:var(--t3);line-height:1.8">This page avoids hard-coding operational volume claims where the code reads the live Excel DB at runtime. The reliable source of truth is the current <code>data/AWB_dB.xlsx</code> load count printed by the hotfolder log.</p>
+    </div>
+  </div>
+</div>
+
 </main>
 <script>
 // ═══════════════════════════════════════════════
 // NAVIGATION
 // ═══════════════════════════════════════════════
-const TITLES = ['','Executive Overview','Pipeline Flow','Intake & Detection','AWB Extraction Engine','Document Classification','Matching & Validation','Routing & Decisions','Output Actions','EDM Duplicate Check','Batch Builder & Sequence','Tracking / Audit','Error Handling','Technical Architecture','Live Simulation','Risks & Edge Cases','Future Roadmap'];
+const TITLES = ['','Executive Overview','Pipeline Flow','Intake & Detection','AWB Extraction Engine','Document Classification','Matching & Validation','Routing & Decisions','Output Actions','EDM Duplicate Check','Batch Builder & Sequence','Tracking / Audit','Error Handling','Technical Architecture','Live Simulation','Risks & Edge Cases','Future Roadmap','Control Centre','Current Snapshot'];
 function nav(n,el){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('on'));
   document.getElementById('p'+n).classList.add('on');
   el.classList.add('on');
   document.getElementById('topbar-title').textContent=TITLES[n];
+  document.getElementById('topbar-num').textContent=String(n).padStart(2,'0');
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
@@ -2423,8 +2776,8 @@ const P2D = [
    desc:'In current V3, EDM behavior is runtime-gated from the UI. Stage 6 in hotfolder uses EDM to confirm a single persistent HIGH candidate; downstream duplicate screening applies Gate-1 hash-all-pages, Gate-2 bounded probes, then Tier-2 full checks (HASH/PHASH/TEXT/OCR) with CCD exemptions and strong-evidence reject guards. When EDM is OFF/auth is unavailable, calls are bypassed safely and can route CLEAN-UNCHECKED with reason codes.',
    tags:['Runtime toggle: EDM ON/OFF','Stage 6: persistent HIGH candidate only','Downstream: Gate1→Gate2→Tier2','Bypass-safe + reason-coded outcomes']},
   {badge:'CLEAN',title:'CLEAN — Unique Documents Queue',icon:'fa-check-circle',bg:'rgba(16,185,129,.15)',ic:'#34D399',
-   desc:'Files that pass all three EDM layers are moved to CLEAN. This folder is the input to the Batch Builder. The EDM audit row is written with result=CLEAN, timing, and compare method. Files remain in CLEAN until the batch builder runs and processes them — at which point CLEAN sources are deleted only after all batch files have been safely copied to PENDING_PRINT.',
-   tags:['Eligibility: all 3 EDM layers passed','Audit: result=CLEAN logged','Feeds: Batch Builder scan','Deleted: only after successful copy']},
+   desc:'Files that pass the EDM gate/layer duplicate screen are moved to CLEAN. This folder is the input to the Batch Builder. The EDM audit row is written with result=CLEAN, timing, and compare method. Files remain in CLEAN until the batch builder runs and processes them — at which point CLEAN sources are deleted only after all batch files have been safely copied to PENDING_PRINT.',
+   tags:['Eligibility: duplicate screen passed','Audit: result=CLEAN logged','Feeds: Batch Builder scan','Deleted: only after successful copy']},
   {badge:'REJECTED',title:'REJECTED — Confirmed Duplicates',icon:'fa-ban',bg:'rgba(239,68,68,.12)',ic:'#F87171',
    desc:'Files where any EDM layer triggers a duplicate signal are moved to REJECTED. The EDM audit row records which layer triggered (MD5 / pHash / OCR-text), the duplicate page count, total pages, and duplication ratio. The original document in the EDM system is never modified. REJECTED files sit in the folder for operator review before manual disposal.',
    tags:['Trigger: any layer matches','Audit: layer + dup_pages + ratio','Original: never modified','Review: operator inspection required']},

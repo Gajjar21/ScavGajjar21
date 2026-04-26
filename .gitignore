@@ -1,67 +1,52 @@
-# AWB Pipeline .gitignore
-
-# Local environment config - NEVER commit
+# Local environment and secrets
 .env
-env-2
-Extras/env file
+.env.*
+!.env.example
+data/token.txt
+data/edm_toggle.json
 
-# Secrets
-/data/token.txt
-token.txt
-
-# Runtime folders: keep skeleton only
-/pdf_organizer/*
-!/pdf_organizer/.gitkeep
-!/pdf_organizer/INBOX/
-!/pdf_organizer/PROCESSED/
-!/pdf_organizer/CLEAN/
-!/pdf_organizer/REJECTED/
-!/pdf_organizer/NEEDS_REVIEW/
-!/pdf_organizer/PENDING_PRINT/
-/pdf_organizer/INBOX/*
-!/pdf_organizer/INBOX/.gitkeep
-/pdf_organizer/PROCESSED/*
-!/pdf_organizer/PROCESSED/.gitkeep
-/pdf_organizer/CLEAN/*
-!/pdf_organizer/CLEAN/.gitkeep
-/pdf_organizer/REJECTED/*
-!/pdf_organizer/REJECTED/.gitkeep
-/pdf_organizer/NEEDS_REVIEW/*
-!/pdf_organizer/NEEDS_REVIEW/.gitkeep
-/pdf_organizer/PENDING_PRINT/*
-!/pdf_organizer/PENDING_PRINT/.gitkeep
-
-/data/*
-!/data/.gitkeep
-!/data/OUT/
-/data/OUT/*
-!/data/OUT/.gitkeep
-
-/logs/*
-!/logs/.gitkeep
-
-Manual_Libraries/
-
-# Python
+# Python caches and virtual environments
 __pycache__/
 *.py[cod]
-*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .venv/
+.venv_*/
 venv/
-*.egg-info/
-dist/
-build/
-*.spec
+env/
+.python-version
 
-# OS
+# Runtime state
+_run_state.json
+data/session.json
+data/pipeline_attempt_counts.json
+data/edm_awb_exists_cache.json
+data/reload_awb.trigger
+
+# Generated data, logs, and working documents
+logs/*
+!logs/.gitkeep
+data/OUT/*
+!data/OUT/.gitkeep
+data/*.xlsx
+data/*.csv
+pdf_organizer/*.pdf
+pdf_organizer/INBOX/*
+pdf_organizer/PROCESSED/*
+pdf_organizer/CLEAN/*
+pdf_organizer/REJECTED/*
+pdf_organizer/NEEDS_REVIEW/*
+pdf_organizer/PENDING_PRINT/*
+!pdf_organizer/INBOX/.gitkeep
+!pdf_organizer/PROCESSED/.gitkeep
+!pdf_organizer/CLEAN/.gitkeep
+!pdf_organizer/REJECTED/.gitkeep
+!pdf_organizer/NEEDS_REVIEW/.gitkeep
+!pdf_organizer/PENDING_PRINT/.gitkeep
+
+# OS/editor files
 .DS_Store
 Thumbs.db
-
-# IDE
-.vscode/
 .idea/
-*.swp
-
-# Stray copied runtime path folder names from cross-platform moves
-C:\\Users\\*
-example env
+.vscode/

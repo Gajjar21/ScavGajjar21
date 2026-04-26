@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**AWB Pipeline V3** — An automated Air Waybill (AWB) extraction system for FedEx logistics documents. It is a cross-platform (Mac/Windows) Tkinter desktop app that watches an inbox folder, runs a multi-stage OCR pipeline to extract 12-digit AWB numbers from PDFs, matches them against a master database, and routes documents into workflow folders (CLEAN, REJECTED, NEEDS_REVIEW, PENDING_PRINT).
+**Document Processing Pipeline V3** — An automated FedEx logistics document-processing system. It is a cross-platform (Mac/Windows) Tkinter desktop app that watches an inbox folder, runs a multi-stage OCR pipeline to extract 12-digit Air Waybill (AWB) numbers from PDFs, matches them against a master database, screens duplicates, and routes documents into workflow folders (`CLEAN`, `REJECTED`, `NEEDS_REVIEW`, `PENDING_PRINT`).
 
 ## Common Commands
 
@@ -116,18 +116,18 @@ Copy `.env.example` to `.env`. Key variables:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `PIPELINE_BASE_DIR` | (required) | Root folder containing `pdf_organizer/` and `data/` |
+| `PIPELINE_BASE_DIR` | project root when omitted | Root folder containing `pdf_organizer/` and `data/` |
 | `TESSERACT_PATH` | auto-detected on Mac | Path to Tesseract binary |
 | `EDM_TOKEN` | — | FedEx EDM API token |
-| `ENABLE_EDM_FALLBACK` | true | Enable Stage-6 EDM lookup |
+| `ENABLE_EDM_FALLBACK` | false | Default Stage-6 EDM lookup state when runtime toggle is absent |
 | `OCR_DPI_MAIN` / `OCR_DPI_STRONG` | 320 / 420 | Rendering DPI for OCR passes |
 | `ENABLE_INBOX_TWO_PASS` | true | Fast+long two-pass scheduling |
-| `LONG_PASS_TIMEOUT_SECONDS` | 65 | Combined fast+long budget; long-pass gets `max(65 - fast_proc, 10s)` |
+| `LONG_PASS_TIMEOUT_SECONDS` | 45 | Combined fast+long budget; long-pass gets `max(45 - fast_proc, 10s)` |
 | `THIRD_PASS_TIMEOUT_SECONDS` | 195 | Max budget for third-pass (capped by global timeout) |
 | `GLOBAL_DOC_TIMEOUT_SECONDS` | 150 | Hard cap on total processing time per file across all passes |
 | `LARGE_FILE_THRESHOLD_BYTES` | 1000000 | Files over 1 MB sorted to end of long-pass queue |
 | `FASTLANE_IMAGE_ONLY_BUDGET_SECONDS` | 16.0 | Fast-lane OCR budget for image-only docs |
-| `ROTATION_PROBE_CERTAIN_MARGIN` | 240 | Probe score margin to call rotation CERTAIN vs LIKELY/UNCERTAIN |
+| `ROTATION_PROBE_CERTAIN_MARGIN` | 300 | Probe score margin to call rotation CERTAIN vs LIKELY/UNCERTAIN |
 | `AUTO_INTERVAL_SEC` | 10 | Auto-mode polling interval |
 | `MAX_PAGES_PER_BATCH` | 48 | Pages per print batch |
 | `TIFF_DPI` / `TIFF_COMPRESSION` | 200 / tiff_lzw | TIFF output settings |
