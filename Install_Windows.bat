@@ -118,30 +118,7 @@ if not exist ".env" (
 )
 
 :: Use Python to safely set keys in .env (handles paths with backslashes)
-python -c "
-import re, sys
-
-env_path = '.env'
-base_dir = sys.argv[1]
-tess_path = sys.argv[2]
-
-try:
-    content = open(env_path, encoding='utf-8').read()
-except FileNotFoundError:
-    content = ''
-
-def set_var(text, key, val):
-    pattern = rf'^{re.escape(key)}=.*$'
-    line = f'{key}={val}'
-    if re.search(pattern, text, re.MULTILINE):
-        return re.sub(pattern, line, text, flags=re.MULTILINE)
-    return text.rstrip() + '\n' + line + '\n'
-
-content = set_var(content, 'PIPELINE_BASE_DIR', base_dir)
-content = set_var(content, 'TESSERACT_PATH', tess_path)
-open(env_path, 'w', encoding='utf-8').write(content)
-print('  [OK] .env configured (PIPELINE_BASE_DIR + TESSERACT_PATH set)')
-" "%CD%" "!TESS_PATH!"
+python -c "import re,sys,pathlib; p=pathlib.Path('.env'); base=sys.argv[1]; tess=sys.argv[2]; text=p.read_text(encoding='utf-8') if p.exists() else ''; setv=lambda s,k,v: re.sub(rf'^{re.escape(k)}=.*$', f'{k}={v}', s, flags=re.MULTILINE) if re.search(rf'^{re.escape(k)}=.*$', s, re.MULTILINE) else s.rstrip() + '\n' + f'{k}={v}' + '\n'; text=setv(text,'PIPELINE_BASE_DIR',base); text=setv(text,'TESSERACT_PATH',tess); p.write_text(text, encoding='utf-8'); print('  [OK] .env configured (PIPELINE_BASE_DIR + TESSERACT_PATH set)')" "%CD%" "!TESS_PATH!"
 
 :: ── 6. Desktop launcher ────────────────────────────────────
 echo.

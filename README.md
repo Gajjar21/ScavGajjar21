@@ -41,6 +41,14 @@ Install_Windows.bat
 Run_GJ21_Launcher_Windows.bat
 ```
 
+Windows install notes:
+
+1. Install Python 3.11+ first and tick **Add Python to PATH**.
+2. Double-click `Install_Windows.bat` from the project folder.
+3. Let the installer create `.venv`, install `requirements.txt`, check/install Tesseract OCR, and write `.env`.
+4. Add your EDM token to `.env` only when you are ready to enable EDM checks.
+5. Launch with the Desktop `AWB Pipeline` shortcut or `Run_GJ21_Launcher_Windows.bat`.
+
 Manual setup:
 
 ```bash
@@ -50,6 +58,7 @@ source .venv/bin/activate          # Mac/Linux
 
 pip install -r V3/requirements.txt
 cp .env.example .env               # then edit local paths/tokens
+# copy .env.example .env           # Windows equivalent
 python -m V3.config                # verify paths
 python -m V3.launcher              # branded launcher + UI
 ```
