@@ -8,14 +8,14 @@ The system is built around a watched `INBOX` folder. PDFs can arrive from multip
 
 **First-time repo viewers should start with the visual process walkthrough:**
 
-[Open the rendered HTML walkthrough](https://htmlpreview.github.io/?https://github.com/Gajjar21/ScavGajjar21/blob/main/awb_pipeline_fedex-2.html)
+[Open the rendered HTML walkthrough](https://htmlpreview.github.io/?https://github.com/Gajjar21/ScavGajjar21/blob/main/project-manifest.html)
 
 This page is the fastest way to understand the project end to end. It explains the old manual workflow, the automated document-processing flow, AWB extraction stages, EDM duplicate screening, batch/TIFF output, runtime controls, architecture, risk handling, and current process snapshot.
 
 Repository copy:
 
-- [`awb_pipeline_fedex-2.html`](awb_pipeline_fedex-2.html) — source file in this repo
-- Best local view: open `awb_pipeline_fedex-2.html` directly in a browser
+- [`project-manifest.html`](project-manifest.html) — source file in this repo
+- Best local view: open `project-manifest.html` directly in a browser
 
 ## What It Does
 
@@ -147,7 +147,7 @@ ScavGajjar21/
 │   ├── REJECTED/
 │   ├── NEEDS_REVIEW/
 │   └── PENDING_PRINT/
-├── awb_pipeline_fedex-2.html
+├── project-manifest.html
 ├── README.md
 ├── CHANGELOG.md
 └── .env.example
@@ -210,7 +210,7 @@ Runtime data, tokens, local `.env` files, and generated outputs should not be co
 ## Documentation
 
 - `docs/OPERATIONS.md`: operator runbook and incident handling.
-- `awb_pipeline_fedex-2.html`: visual architecture and process walkthrough.
+- `project-manifest.html`: visual architecture and process walkthrough.
 - `CHANGELOG.md`: release history.
 - `CONTRIBUTING.md`: local setup and PR checklist.
 - `SECURITY.md`: private vulnerability reporting guidance.

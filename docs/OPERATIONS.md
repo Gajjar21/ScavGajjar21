@@ -144,4 +144,4 @@ This runbook is for operators running Document Processing Pipeline V3 from the d
 | `data/*` | AWB DB, caches, audit workbooks, output lists |
 | `data/OUT/*` | Generated print-stack PDFs and sequence files |
 | `logs/*` | Runtime and EDM logs |
-| `awb_pipeline_fedex-2.html` | Visual architecture/process walkthrough |
+| `project-manifest.html` | Visual architecture/process walkthrough |

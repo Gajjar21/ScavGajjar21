@@ -21,7 +21,7 @@ All notable changes to this project will be documented in this file.
 - Added `.env.example` for safe local configuration onboarding.
 - Added `.gitignore` coverage for local secrets, virtual environments, runtime state, logs, and generated PDFs/TIFFs.
 - Updated `CONTRIBUTING.md` for current dependency setup and documentation-only change guidance.
-- Updated `awb_pipeline_fedex-2.html` visual documentation for current process wording and phone-friendly layout.
+- Updated `project-manifest.html` visual documentation for current process wording and phone-friendly layout.
 
 ### UI Reliability
 - Hardened UI shutdown in `V3/ui/app_window.py`:
