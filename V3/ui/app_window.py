@@ -1383,7 +1383,7 @@ class App(tk.Tk):
             cursor="right_ptr",
         ).pack(side="right", padx=(4, 0))
         tk.Button(
-            bb_right, text="Open DB", font=FONT_SMALL, command=lambda: self._open_file(config.AWB_EXCEL_PATH),
+            bb_right, text="Update DB", font=FONT_SMALL, command=self._update_db,
             relief="flat", padx=8, pady=2,
             bg="#dbe2ea", fg=TEXT_FG,
             activebackground="#cfd7e1",
@@ -3474,6 +3474,129 @@ class App(tk.Tk):
             self.after(0, lambda: self._request_count_refresh(80))
 
         self.run_in_thread(_copy)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # UPDATE DB
+    # ─────────────────────────────────────────────────────────────────────────
+    def _update_db(self):
+        """Let the user select one or more Excel/CSV files, extract 12-digit AWB
+        numbers from column A of each, append them to AWB_dB.xlsx, deduplicate,
+        and stamp column B with today's upload date for every newly added row."""
+        import datetime
+
+        paths = filedialog.askopenfilenames(
+            title="Select Excel / CSV files to import",
+            filetypes=[
+                ("Excel / CSV files", "*.xlsx *.xls *.csv"),
+                ("Excel workbook", "*.xlsx"),
+                ("Legacy Excel", "*.xls"),
+                ("CSV", "*.csv"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not paths:
+            return
+
+        def _run():
+            try:
+                from openpyxl import load_workbook
+            except ImportError:
+                self.log_append("[DB] openpyxl not installed — cannot update DB.")
+                self._show_toast("openpyxl missing", "error")
+                return
+
+            today = datetime.date.today().strftime("%Y-%m-%d")
+
+            # ── collect incoming AWBs from all selected files ──────────────────
+            incoming: list[str] = []
+            for src in paths:
+                src = Path(src)
+                try:
+                    if src.suffix.lower() == ".csv":
+                        import csv
+                        with open(src, newline="", encoding="utf-8-sig") as fh:
+                            reader = csv.reader(fh)
+                            for i, row in enumerate(reader):
+                                if i == 0 and row and not str(row[0]).strip().isdigit():
+                                    continue  # skip header
+                                if row:
+                                    val = str(row[0]).strip()
+                                    if len(val) == 12 and val.isdigit():
+                                        incoming.append(val)
+                    else:
+                        wb_src = load_workbook(src, data_only=True)
+                        ws_src = wb_src.active
+                        first = True
+                        for row in ws_src.iter_rows(min_col=1, max_col=1, values_only=True):
+                            val = str(row[0]).strip() if row[0] is not None else ""
+                            if first:
+                                first = False
+                                if not val.isdigit():
+                                    continue  # skip header row
+                            if len(val) == 12 and val.isdigit():
+                                incoming.append(val)
+                        wb_src.close()
+                    self.log_append(f"[DB] Read {src.name} — found {len(incoming)} candidate AWBs so far.")
+                except Exception as exc:
+                    self.log_append(f"[DB] Could not read {src.name}: {exc}")
+
+            if not incoming:
+                self.log_append("[DB] No valid 12-digit AWB numbers found in the selected files.")
+                self._show_toast("No AWBs found", "error")
+                return
+
+            # ── load the master DB ─────────────────────────────────────────────
+            db_path = config.AWB_EXCEL_PATH
+            try:
+                wb_db = load_workbook(db_path)
+            except FileNotFoundError:
+                self.log_append(f"[DB] Master DB not found at {db_path}.")
+                self._show_toast("DB file missing", "error")
+                return
+            ws_db = wb_db.active
+
+            # Build existing-AWB set (col A, skip header row 1)
+            existing: set[str] = set()
+            for row in ws_db.iter_rows(min_row=2, min_col=1, max_col=1, values_only=True):
+                val = str(row[0]).strip() if row[0] is not None else ""
+                if val.isdigit():
+                    existing.add(val)
+
+            # Add column B header if missing
+            if ws_db.cell(row=1, column=2).value is None:
+                ws_db.cell(row=1, column=2, value="Upload Date")
+
+            # ── append only new AWBs ───────────────────────────────────────────
+            added = 0
+            seen_incoming: set[str] = set()
+            for awb in incoming:
+                if awb in existing or awb in seen_incoming:
+                    continue
+                seen_incoming.add(awb)
+                next_row = ws_db.max_row + 1
+                ws_db.cell(row=next_row, column=1, value=int(awb))
+                ws_db.cell(row=next_row, column=2, value=today)
+                existing.add(awb)
+                added += 1
+
+            wb_db.save(db_path)
+            wb_db.close()
+
+            self.log_append(
+                f"[DB] Update complete — {added} new AWB(s) added "
+                f"(from {len(paths)} file(s), {len(incoming)} total candidates). "
+                f"Upload date: {today}."
+            )
+            self.set_status(f"DB updated: +{added} AWBs")
+            self._show_toast(f"+{added} AWBs added to DB", "success")
+
+            # signal hotfolder to reload
+            try:
+                config.AWB_RELOAD_TRIGGER.touch()
+            except Exception:
+                pass
+
+        self.run_in_thread(_run)
 
     # ─────────────────────────────────────────────────────────────────────────
     # REFRESH DB
