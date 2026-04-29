@@ -345,7 +345,7 @@ class App(tk.Tk):
 
     def __init__(self):
         super().__init__()
-        self.title("ScavGajjar V3 \u2014 Control Centre")
+        self.title("GJ21 3.1 \u2014 Control Centre")
         self.geometry("1440x900")
         self.minsize(1100, 700)
         self.configure(bg=APP_BG)
@@ -648,7 +648,7 @@ class App(tk.Tk):
         title_col = tk.Frame(hdr, bg=HEADER_BG)
         title_col.pack(side="left", fill="y", pady=10)
         tk.Label(
-            title_col, text="ScavGajjar V3",
+            title_col, text="GJ21 3.1",
             font=FONT_HEADER, bg=HEADER_BG, fg=HEADER_FG,
         ).pack(anchor="w")
         sub_row = tk.Frame(title_col, bg=HEADER_BG)
@@ -4208,7 +4208,8 @@ class App(tk.Tk):
 
         if not messagebox.askyesno(
             "Confirm Clear All",
-            "This will stop all scripts and clear INBOX + OUT working files.\n"
+            "This will stop all scripts and clear OUT working files.\n"
+            "INBOX files will be preserved.\n"
             "PROCESSED, CLEAN, REJECTED, NEEDS_REVIEW and protected files\n"
             "are NOT affected.\n\nContinue?",
         ):
@@ -4224,7 +4225,7 @@ class App(tk.Tk):
             for fp in OUTPUT_FILES_TO_CLEAR:
                 if safe_delete_file(fp):
                     self.log_append(f"Deleted: {fp.name}")
-            self.log_append(f"INBOX cleared:  {delete_matching(config.INBOX_DIR, WORKING_PATTERNS)} file(s)")
+            self.log_append(f"INBOX preserved: {_count_pdfs(config.INBOX_DIR)} PDF file(s)")
             self.log_append(f"OUT cleared:    {delete_matching(config.OUT_DIR, WORKING_PATTERNS)} file(s)")
             self.log_append("Protected files untouched.")
             save_state({"last_run_id": None})

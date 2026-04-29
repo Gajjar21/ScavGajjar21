@@ -17,14 +17,17 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import time
+import zipfile
 from datetime import datetime, date
 from pathlib import Path
 
 from V3 import config
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
@@ -142,11 +145,53 @@ def _create_workbook():
     return wb
 
 
+def _is_recoverable_workbook_error(exc: Exception) -> bool:
+    """Return True for errors that mean the xlsx itself cannot be loaded."""
+    return isinstance(exc, (zipfile.BadZipFile, InvalidFileException, KeyError, EOFError))
+
+
+def _quarantine_corrupt_workbook(exc: Exception) -> Path | None:
+    """Move a corrupt audit workbook aside so a clean one can be created.
+
+    This runs only while the audit lock is held.  The bad file is preserved for
+    later inspection, and any failure here is allowed to bubble up to the
+    caller so audit recovery never silently deletes evidence.
+    """
+    if not _AUDIT_XLSX.exists():
+        return None
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    quarantine_dir = config.DATA_DIR / "corrupt_audit_workbooks"
+    quarantine_dir.mkdir(parents=True, exist_ok=True)
+    quarantine_path = quarantine_dir / f"{_AUDIT_XLSX.stem}.corrupt.{stamp}{_AUDIT_XLSX.suffix}"
+
+    try:
+        _AUDIT_XLSX.replace(quarantine_path)
+    except Exception:
+        shutil.copy2(_AUDIT_XLSX, quarantine_path)
+        _AUDIT_XLSX.unlink()
+
+    try:
+        sys.stderr.write(
+            f"[tracker] Recovered corrupt audit workbook: {exc}. "
+            f"Moved bad copy to {quarantine_path}\n"
+        )
+    except Exception:
+        pass
+    return quarantine_path
+
+
 def _open_or_create():
     """Load existing workbook or create new one.  Ensures all 4 sheets exist."""
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     if _AUDIT_XLSX.exists():
-        wb = load_workbook(_AUDIT_XLSX)
+        try:
+            wb = load_workbook(_AUDIT_XLSX)
+        except Exception as e:
+            if not _is_recoverable_workbook_error(e):
+                raise
+            _quarantine_corrupt_workbook(e)
+            wb = _create_workbook()
         # Ensure all sheets exist (first-run migration)
         for sheet_name, cols in [
             (SHEET_HOT, _HOT_COLS),
@@ -162,6 +207,26 @@ def _open_or_create():
     else:
         wb = _create_workbook()
     return wb
+
+
+def _save_workbook_atomic(wb) -> None:
+    """Save the workbook via same-directory temp file, then atomically replace.
+
+    A direct openpyxl save can leave a partial zip if the process is interrupted
+    mid-write.  Saving to a temp sibling first keeps the active audit workbook
+    untouched until a complete replacement is ready.
+    """
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp_path = _AUDIT_XLSX.with_name(f".{_AUDIT_XLSX.name}.{os.getpid()}.tmp")
+    try:
+        wb.save(tmp_path)
+        os.replace(tmp_path, _AUDIT_XLSX)
+    finally:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except Exception:
+            pass
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -469,7 +534,7 @@ def rebuild_dashboard_now() -> None:
         fd = _acquire_lock()
         wb = _open_or_create()
         _rebuild_dashboard(wb)
-        wb.save(_AUDIT_XLSX)
+        _save_workbook_atomic(wb)
         _last_dashboard_rebuild = time.time()
     except Exception as e:
         try:
@@ -494,7 +559,7 @@ def _append_row(sheet_name: str, row: list) -> None:
         if now - _last_dashboard_rebuild >= _DASHBOARD_REBUILD_INTERVAL:
             _rebuild_dashboard(wb)
             _last_dashboard_rebuild = now
-        wb.save(_AUDIT_XLSX)
+        _save_workbook_atomic(wb)
     except Exception as e:
         # Never break pipeline flow on audit failure
         try:
