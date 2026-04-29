@@ -235,7 +235,7 @@ def make_barcode_cover_pdf_bytes(
     c.drawString(60, h - 150, f"BATCH: {batch_no:03d}")
     c.drawString(60, h - 170, f"PAGE: {page_in_batch} of {pages_in_batch}")
     c.setFont("Helvetica", 12)
-    c.drawString(60, h - 195, f"Documents: {doc_count}  |  Invoice pages: {total_inv_pages}")
+    c.drawString(60, h - 195, f"Documents: {doc_count}")
     if tier:
         c.drawString(60, h - 215, f"Detection Tier: {tier}")
 
@@ -244,6 +244,8 @@ def make_barcode_cover_pdf_bytes(
 
     c.setFont("Helvetica", 10)
     c.drawString(60, 40, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    c.setFont("Helvetica", 7)
+    c.drawRightString(w - 60, 24, f"p: {total_inv_pages}")
     c.showPage()
     c.save()
     return buf.getvalue()
