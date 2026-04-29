@@ -285,18 +285,19 @@ code,pre,.mono{font-family:'JetBrains Mono',monospace}
 .sev-l{background:rgba(75,85,99,.15);color:#9CA3AF;border:1px solid rgba(75,85,99,.3)}
 
 /* ── FLOWCHART SECTION ──────────────────────────── */
-#flow-svg-wrap{overflow-x:auto;padding:8px 0}
+.flow-workspace{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
+#flow-svg-wrap{overflow:auto;padding:8px 0;max-height:calc(100vh - 145px);border:1px solid var(--border);border-radius:var(--r-lg);background:rgba(255,255,255,.018)}
 .flow-node{cursor:pointer;transition:all .2s}
 .flow-node rect,.flow-node circle,.flow-node polygon{transition:all .2s}
 .flow-node:hover rect{filter:brightness(1.15)}
 .flow-node.active-fn rect{filter:brightness(1.2);stroke:#BF7FFF!important;stroke-width:2!important}
 #flow-svg .flow-ico{font-family:"Font Awesome 6 Free";font-weight:900}
 .flow-detail-box{
-  margin-top:20px;padding:22px 24px;border-radius:var(--r-lg);
+  position:sticky;top:82px;padding:22px 24px;border-radius:var(--r-lg);
   background:rgba(77,20,140,.09);border:1px solid rgba(123,47,190,.24);
-  display:none;animation:fadeUp .22s ease;
+  display:flex;gap:18px;align-items:flex-start;animation:fadeUp .22s ease;
 }
-.flow-detail-box.open{display:flex;gap:18px;align-items:flex-start}
+.flow-detail-box.open{border-color:rgba(168,85,247,.55);background:rgba(77,20,140,.13);box-shadow:0 14px 36px rgba(0,0,0,.25)}
 
 /* ── ARCH DIAGRAM ───────────────────────────────── */
 .arch-layer{
@@ -601,6 +602,12 @@ code,pre,.mono{font-family:'JetBrains Mono',monospace}
   #terminal{
     -webkit-overflow-scrolling:touch;
   }
+  .flow-workspace{
+    display:block;
+  }
+  #flow-svg-wrap{
+    max-height:none;
+  }
   #flow-svg{
     width:820px;
     height:auto;
@@ -608,8 +615,9 @@ code,pre,.mono{font-family:'JetBrains Mono',monospace}
   #p2flow{
     min-width:860px !important;
   }
-  .flow-detail-box.open{
-    display:block;
+  .flow-detail-box{
+    position:static;
+    margin-top:14px;
   }
 
   .acc-head{
@@ -1007,8 +1015,9 @@ button,
     <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--t3)"><span style="width:10px;height:10px;border-radius:3px;background:rgba(239,68,68,.5);display:inline-block"></span>Review</span>
   </div>
 
-  <div id="flow-svg-wrap">
-    <svg id="flow-svg" width="920" height="1080" viewBox="0 0 920 1080" xmlns="http://www.w3.org/2000/svg" style="font-family:'Inter',sans-serif;max-width:100%">
+  <div class="flow-workspace">
+    <div id="flow-svg-wrap">
+      <svg id="flow-svg" width="920" height="1080" viewBox="0 0 920 1080" xmlns="http://www.w3.org/2000/svg" style="font-family:'Inter',sans-serif;max-width:100%">
       <defs>
         <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
           <polygon points="0 0, 8 3, 0 6" fill="rgba(123,47,190,0.55)"/>
@@ -1231,17 +1240,18 @@ button,
         <rect x="368" y="1047" width="42" height="16" rx="8" fill="rgba(239,68,68,.15)" stroke="rgba(239,68,68,.28)"/>
         <text x="389" y="1059" text-anchor="middle" fill="#F87171" font-size="8" font-weight="700">S-7</text>
       </g>
-    </svg>
-  </div>
+      </svg>
+    </div>
 
-  <!-- Detail panel -->
-  <div class="flow-detail-box" id="flow-detail">
-    <div id="fd-icon" style="width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px"></div>
-    <div style="flex:1">
-      <div id="fd-badge" style="font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--v400);margin-bottom:4px"></div>
-      <div id="fd-title" style="font-family:'Outfit',sans-serif;font-size:17px;font-weight:800;margin-bottom:8px"></div>
-      <p id="fd-desc" style="font-size:13px;color:var(--t3);line-height:1.85;margin-bottom:12px"></p>
-      <div id="fd-tags" style="display:flex;flex-wrap:wrap;gap:7px"></div>
+    <!-- Detail panel -->
+    <div class="flow-detail-box" id="flow-detail">
+      <div id="fd-icon" style="width:42px;height:42px;border-radius:11px;background:var(--v100);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px"><i class="fas fa-hand-pointer" style="color:var(--v400)"></i></div>
+      <div style="flex:1">
+        <div id="fd-badge" style="font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--v400);margin-bottom:4px">Flow Details</div>
+        <div id="fd-title" style="font-family:'Outfit',sans-serif;font-size:17px;font-weight:800;margin-bottom:8px">Select a Pipeline Node</div>
+        <p id="fd-desc" style="font-size:13px;color:var(--t3);line-height:1.85;margin-bottom:12px">Click any stage in the flowchart to see its purpose, timing, fallback logic, and decision tags here while the diagram stays in view.</p>
+        <div id="fd-tags" style="display:flex;flex-wrap:wrap;gap:7px"><span class="badge bv">Live detail panel</span><span class="badge ba">No scrolling needed</span></div>
+      </div>
     </div>
   </div>
 
